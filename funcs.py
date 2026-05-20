@@ -21,7 +21,6 @@ def effective_water_content (theta, theta_r, theta_e) :
 def K_unsat (theta, theta_r, theta_e, labda, m, Ks):
     '''
     calculate the unsaturated hydraulic consuctivity unsing Mualem-vanGenuchten
-     could later simplify tghe integration by neglecting the -1 and making it analytically integrable
     '''
     Se = effective_water_content(theta, theta_r, theta_e)
 
@@ -114,6 +113,12 @@ def RK4 (z_fronts, h_bins, K_bins, dtheta, Hp, dt, active = None):
 
 ###### STARTING INFILTRATION ####
 
+'''
+these functions define what type of infiltration is used (ponded or non-ponded) and 
+activate the infiltration type depending on the rainfall or the ponding
+this will allow variable input for Hp or rainfall instead of a predefined e.g. Hp = 0.0001
+'''
+
 def seed_depth(K_j, h_j, dtheta, dt):
     """
     Analytical seed depth for bin j at the very first time step (z_j = 0).
@@ -149,9 +154,35 @@ def potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp=0.0):
             f_p += K_bins[j] * (z_fronts[j] + h_bins[j] + Hp) / (dtheta * z_fronts[j])
     return f_p
 
+def invert_K(i, theta_r, theta_e, Ks, m, labda, tol=1e-5, N = 100):
+    """
+    Find theta_surf such that K(theta_surf) = i via bisection.
+    Valid for 0 < i <= Ks. Returns theta_r if i <= 0, theta_e if i >= Ks.
+
+    Comes from the idea that for unponded infiltration, conductivity = infiltration
+    i.e K(theta) = i
+    theta is a specific soil moisture which describes which pores are filled at a specific infiltration rate.
+
+    the active theta bins are determined from this.
+    """
+    if i <= 0.0:
+        return theta_r
+    if i >= Ks:
+        return theta_e
+
+    lo, hi = theta_r + 1e-10, theta_e - 1e-10
+    for _ in range(N):                         
+        mid = 0.5 * (lo + hi)
+        if K_unsat(mid, theta_r, theta_e, labda, m, Ks) < i:
+            lo = mid
+        else:
+            hi = mid
+        if (hi - lo) < tol:
+            break
+    return 0.5 * (lo + hi)
 
 def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
-                         rainfall_rate, Hp, max_depth=10.0):
+                         rainfall_rate, Hp,theta_r, theta_e, m, Ks, labda, max_depth=10.0):
     """
     Determine ponding state and advance wetting fronts for one time step.
 
@@ -198,9 +229,9 @@ def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
         z_new = np.minimum(z_new, max_depth)
         return z_new, Hp_new, f_actual
 
+    # Ponded infiltration
     if rainfall_rate >= f_p:
-        # ---- PONDING CASE ----
-        # All bins active; advance at full potential rate
+        # activate all bins
         z_fronts = activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt)
         # Recompute f_p after seeding (newly seeded bins now contribute)
         f_p = potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp)
@@ -213,25 +244,31 @@ def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
         Hp_new = max(Hp + dHp, 0.0)
         f_actual = f_p
 
+    # Non-ponded infiltration    
     else:
-        # ---- SUB-PONDING CASE ----
-        # Scale the effective time step so that total flux = rainfall_rate.
-        # This is an approximation: in reality only a subset of bins should
-        # be active, but uniform scaling preserves the relative front structure.
-        if f_p > 1e-15:
-            dt_eff = dt * (rainfall_rate / f_p)
-        else:
-            dt_eff = 0.0
+        #calulate the largest bin that is active
+        theta_surf = invert_K(rainfall_rate, theta_r, theta_e, Ks, m, labda)
+
+        #get the index from the closest theta bin
+        idx = (np.abs(theta_bins - theta_surf)).argmin()
+
+        sliced = {
+            key: value[:idx]
+            for key, value in test.items()
+            if isinstance(value, np.ndarray)
+        }
 
         active = z_fronts > 0.0
         z_new = RK4(
-            z_fronts, h_bins, K_bins, dtheta, dt_eff, Hp=0.0, active=active
+            z_fronts, sliced['h_bins'], sliced['K_bins'], dtheta, dt, Hp=0.0, active=active
         )
         Hp_new   = 0.0
         f_actual = rainfall_rate
 
     z_new = np.minimum(z_new, max_depth)
     return z_new, Hp_new, f_actual
+
+
 
 ###### CAPILLARY RELAXATION ####
 
