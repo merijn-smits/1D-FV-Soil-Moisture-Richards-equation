@@ -112,6 +112,128 @@ def RK4 (z_fronts, h_bins, K_bins, dtheta, Hp, dt, active = None):
     z_new = z_fronts + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
     return np.maximum(z_new, 0.0)   # fronts cannot be negative
 
+###### STARTING INFILTRATION ####
+
+def seed_depth(K_j, h_j, dtheta, dt):
+    """
+    Analytical seed depth for bin j at the very first time step (z_j = 0).
+    Derived by integrating dz/dt = K_j * h_j / (dtheta * z_j) for small z:
+        z_j * dz_j = K_j * h_j / dtheta * dt  =>  z_j = sqrt(2*K_j*h_j*dt/dtheta)
+    """
+    return max(np.sqrt(2.0 * K_j * h_j * dt / dtheta), 1e-9)
+
+def activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt):
+    """
+    Seed all inactive bins when ponding first occurs (Hp > 0, or i > f_p).
+    Only affects bins with z_j == 0; already active bins are unchanged.
+    """
+    z_new = z_fronts.copy()
+    for j in range(len(z_fronts)):
+        if z_fronts[j] == 0.0:
+            z_new[j] = seed_depth(K_bins[j], h_bins[j], dtheta, dt)
+    return z_new
+
+
+def potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp=0.0):
+    """
+    Total potential infiltration rate f_p [m/hr]: the rate at which the soil
+    can accept water given the current front positions and ponded depth.
+
+    f_p = sum_j [ K_j * (z_j + h_j + Hp) / (dtheta * z_j) ]   [Ogden 2015, eq. 18 and integrate/sum according to 13]
+
+    Only bins with z_j > 0 (active bins) contribute.
+    """
+    f_p = 0.0
+    for j in range(len(z_fronts)):
+        if z_fronts[j] > 0.0:
+            f_p += K_bins[j] * (z_fronts[j] + h_bins[j] + Hp) / (dtheta * z_fronts[j])
+    return f_p
+
+
+def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
+                         rainfall_rate, Hp, max_depth=10.0):
+    """
+    Determine ponding state and advance wetting fronts for one time step.
+
+    Logic (Ogden 2015, Section 2.2):
+    1. Compute potential rate f_p from current front depths.
+    2a. PONDED  (rainfall >= f_p OR Hp > 0):
+          - Activate all inactive bins (seed depths)
+          - Advance fronts at full potential rate
+          - Excess rainfall accumulates as ponded depth: Hp += (i - f_p)*dt
+          - Existing Hp also drains at the actual infiltration rate
+    2b. SUB-PONDED (rainfall < f_p AND Hp == 0):
+          - Scale front advance so total flux = rainfall rate
+          - Approximation: all bins scaled uniformly (Ogden 2015, p. 4286)
+          - Hp remains 0
+
+    Parameters
+    ----------
+    z_fronts     : array (N,), wetting front depths [m]
+    h_bins       : array (N,), capillary heads [m]
+    K_bins       : array (N,), hydraulic conductivities [m/hr]
+    dtheta       : bin width [-]
+    dt           : time step [hr]
+    rainfall_rate: surface water flux [m/hr]; np.inf for constant ponding
+    Hp           : current ponded depth [m]
+    max_depth    : simulation domain depth [m]
+
+    Returns
+    -------
+    z_new    : array (N,), updated wetting front depths
+    Hp_new   : updated ponded depth [m]
+    f_actual : actual infiltration rate this step [m/hr]
+    """
+    # --- Existing ponded depth drains first (treat like extra head) ---
+    if Hp > 0.0:
+        z_fronts = activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt)
+
+    f_p = potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp)
+
+    # Constant ponded condition signalled by np.inf
+    if np.isinf(rainfall_rate):
+        z_new  = RK4(z_fronts, h_bins, K_bins, dtheta, Hp,dt)
+        Hp_new = Hp          # maintained externally (constant ponding assumption)
+        f_actual = f_p
+        z_new = np.minimum(z_new, max_depth)
+        return z_new, Hp_new, f_actual
+
+    if rainfall_rate >= f_p:
+        # ---- PONDING CASE ----
+        # All bins active; advance at full potential rate
+        z_fronts = activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt)
+        # Recompute f_p after seeding (newly seeded bins now contribute)
+        f_p = potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp)
+
+        z_new = RK4(z_fronts, h_bins, K_bins, dtheta, dt, Hp)
+
+        # Net change in ponded depth: rain in minus infiltration out
+        # If Hp > 0, it also drains at f_p (part of f_actual is from Hp)
+        dHp = (rainfall_rate - f_p) * dt
+        Hp_new = max(Hp + dHp, 0.0)
+        f_actual = f_p
+
+    else:
+        # ---- SUB-PONDING CASE ----
+        # Scale the effective time step so that total flux = rainfall_rate.
+        # This is an approximation: in reality only a subset of bins should
+        # be active, but uniform scaling preserves the relative front structure.
+        if f_p > 1e-15:
+            dt_eff = dt * (rainfall_rate / f_p)
+        else:
+            dt_eff = 0.0
+
+        active = z_fronts > 0.0
+        z_new = RK4(
+            z_fronts, h_bins, K_bins, dtheta, dt_eff, Hp=0.0, active=active
+        )
+        Hp_new   = 0.0
+        f_actual = rainfall_rate
+
+    z_new = np.minimum(z_new, max_depth)
+    return z_new, Hp_new, f_actual
+
+###### CAPILLARY RELAXATION ####
 
 def capillary_relax (z_fronts):
     '''
