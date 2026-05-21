@@ -56,7 +56,6 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks):
         'h_bins'     : h_bins 
     }
 
-test = create_bins(N = 10, theta_r = 0.02, theta_e = 0.42, labda = 0.4566599312, alpha = 0.021941504,n = 1.772038185,Ks = 25.7389262944)
 
 ######## INFILTRATION FUNCTIONS #####
 '''
@@ -111,7 +110,7 @@ def RK4 (z_fronts, h_bins, K_bins, dtheta, Hp, dt, active = None):
     z_new = z_fronts + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
     return np.maximum(z_new, 0.0)   # fronts cannot be negative
 
-###### STARTING INFILTRATION ####
+###### INFILTRATION INITIALISATION ####
 
 '''
 these functions define what type of infiltration is used (ponded or non-ponded) and 
@@ -145,8 +144,6 @@ def potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp=0.0):
     can accept water given the current front positions and ponded depth.
 
     f_p = sum_j [ K_j * (z_j + h_j + Hp) / (dtheta * z_j) ]   [Ogden 2015, eq. 18 and integrate/sum according to 13]
-
-    Only bins with z_j > 0 (active bins) contribute.
     """
     f_p = 0.0
     for j in range(len(z_fronts)):
@@ -181,8 +178,8 @@ def invert_K(i, theta_r, theta_e, Ks, m, labda, tol=1e-5, N = 100):
             break
     return 0.5 * (lo + hi)
 
-def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
-                         rainfall_rate, Hp,theta_r, theta_e, m, Ks, labda, max_depth=10.0):
+def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, bins,
+                         z_fronts, max_depth=10.0):
     """
     Determine ponding state and advance wetting fronts for one time step.
 
@@ -203,7 +200,7 @@ def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
     z_fronts     : array (N,), wetting front depths [m]
     h_bins       : array (N,), capillary heads [m]
     K_bins       : array (N,), hydraulic conductivities [m/hr]
-    dtheta       : bin width [-]
+    delta_theta       : bin width [-]
     dt           : time step [hr]
     rainfall_rate: surface water flux [m/hr]; np.inf for constant ponding
     Hp           : current ponded depth [m]
@@ -217,26 +214,27 @@ def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
     """
     # --- Existing ponded depth drains first (treat like extra head) ---
     if Hp > 0.0:
-        z_fronts = activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt)
+        z_fronts = activate_ponded_bins(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], dt)
 
-    f_p = potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp)
+    f_p = potential_infiltration_rate(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp)
 
+    '''
     # Constant ponded condition signalled by np.inf
     if np.isinf(rainfall_rate):
-        z_new  = RK4(z_fronts, h_bins, K_bins, dtheta, Hp,dt)
+        z_new  = RK4(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp,dt)
         Hp_new = Hp          # maintained externally (constant ponding assumption)
         f_actual = f_p
         z_new = np.minimum(z_new, max_depth)
         return z_new, Hp_new, f_actual
-
+    '''
     # Ponded infiltration
     if rainfall_rate >= f_p:
         # activate all bins
-        z_fronts = activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt)
+        z_fronts = activate_ponded_bins(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], dt)
         # Recompute f_p after seeding (newly seeded bins now contribute)
-        f_p = potential_infiltration_rate(z_fronts, h_bins, K_bins, dtheta, Hp)
+        f_p = potential_infiltration_rate(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp)
 
-        z_new = RK4(z_fronts, h_bins, K_bins, dtheta, dt, Hp)
+        z_new = RK4(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], dt, Hp)
 
         # Net change in ponded depth: rain in minus infiltration out
         # If Hp > 0, it also drains at f_p (part of f_actual is from Hp)
@@ -250,17 +248,21 @@ def handle_surface_flux(z_fronts, h_bins, K_bins, dtheta, dt,
         theta_surf = invert_K(rainfall_rate, theta_r, theta_e, Ks, m, labda)
 
         #get the index from the closest theta bin
-        idx = (np.abs(theta_bins - theta_surf)).argmin()
-
+        idx = (np.abs(bins['theta_bins'] - theta_surf)).argmin()
+        
+        #select only the bins that should be active for this infiltration rate
         sliced = {
             key: value[:idx]
-            for key, value in test.items()
+            for key, value in bins.items()
             if isinstance(value, np.ndarray)
         }
 
+        #set the infiltration depth for inactive front to zero 
+        z_fronts[idx:] = 0
+
         active = z_fronts > 0.0
         z_new = RK4(
-            z_fronts, sliced['h_bins'], sliced['K_bins'], dtheta, dt, Hp=0.0, active=active
+            z_fronts, sliced['h_bins'], sliced['K_bins'], bins['delta_theta'], dt, Hp, active=active
         )
         Hp_new   = 0.0
         f_actual = rainfall_rate
@@ -287,18 +289,4 @@ def capillary_relax (z_fronts):
     return z_fronts
 
 
-#test
-Hp = 0.001
-dt = 1/24/60 #in minutes
-N = 10
-z_fronts = np.zeros(N)+0.01
-t_max = 360/24/60 #in minutes
 
-t_steps = int(t_max/dt)
-time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
-z_history = np.zeros((t_steps, N))
-
-for i ,t  in enumerate(time_vec):
-    z_fronts = RK4(z_fronts, test['h_bins'], test['K_bins'], test['delta_theta'], Hp, dt)
-    z_fronts = capillary_relax(z_fronts)
-    z_history[i,:] = z_fronts
