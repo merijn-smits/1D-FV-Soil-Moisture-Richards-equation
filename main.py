@@ -10,14 +10,14 @@ z_fronts = np.zeros(N)+0.001     # remove +0.01 when infiltration initialisation
 t_max = 360/24/60 #in minutes
 rainfall_rate = 1
 
-#Soil params, here Staringreeks B01
-theta_r = 0.01
-theta_e = 0.42
-Ks = 25
-m = 0.42
-n = 1.772038185
+#Soil params, here Staringreeks B01 (fijn zand)
+theta_r = 0.02
+theta_e = 0.427
+Ks = 31.23
+n = 1.735
+m = 1-1/n
 labda = 0.981
-alpha = 0.021941504
+alpha = 0.0217
 
 #init
 t_steps = int(t_max/dt)

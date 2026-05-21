@@ -14,8 +14,9 @@ import pandas as pd
 def effective_water_content (theta, theta_r, theta_e) :
     '''
     calculate the effective water content using the residual water content and the effective porosity
+    apply a clip to prevent dividing by 0
     '''
-    return (theta - theta_r)/(theta_e - theta_r)
+    return np.clip((theta - theta_r)/(theta_e - theta_r),1e-5,1)
 
 
 def K_unsat (theta, theta_r, theta_e, labda, m, Ks):
@@ -39,11 +40,11 @@ def h_theta (theta, theta_r, theta_e, alpha, m, n):
 
 def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks):
     '''
-    create bins with unique hydraulic properties
+    create finite volume soil moisture bins with unique hydraulic properties
     '''
     m = 1-1/n
     delta_th = (theta_e - theta_r)  
-    theta_bins = np.array([(i/N) for i in range(1,N+1)])*delta_th
+    theta_bins = np.array([(i/N) for i in range(2,N+2)])*delta_th
 
     # calculate hydraulic properties of each bin
     K_bins = K_unsat(theta_bins, theta_r, theta_e, labda, m, Ks)
@@ -183,16 +184,16 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
     """
     Determine ponding state and advance wetting fronts for one time step.
 
-    Logic (Ogden 2015, Section 2.2):
     1. Compute potential rate f_p from current front depths.
-    2a. PONDED  (rainfall >= f_p OR Hp > 0):
+    2a. Ponded  (rainfall >= f_p OR Hp > 0):
           - Activate all inactive bins (seed depths)
           - Advance fronts at full potential rate
           - Excess rainfall accumulates as ponded depth: Hp += (i - f_p)*dt
           - Existing Hp also drains at the actual infiltration rate
-    2b. SUB-PONDED (rainfall < f_p AND Hp == 0):
+    2b. Un-ponded (rainfall < f_p AND Hp == 0):
           - Scale front advance so total flux = rainfall rate
-          - Approximation: all bins scaled uniformly (Ogden 2015, p. 4286)
+          - The activate bins are calculated with the asumption that infiltration is precipitation and infiltration is hydraulic conductivity
+            therefore P = K(theta). the chracteristic theta can be calculated with K^-1(P) = theta
           - Hp remains 0
 
     Parameters
@@ -218,7 +219,6 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
 
     f_p = potential_infiltration_rate(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp)
 
-    '''
     # Constant ponded condition signalled by np.inf
     if np.isinf(rainfall_rate):
         z_new  = RK4(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp,dt)
@@ -226,15 +226,15 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
         f_actual = f_p
         z_new = np.minimum(z_new, max_depth)
         return z_new, Hp_new, f_actual
-    '''
+  
     # Ponded infiltration
-    if rainfall_rate >= f_p:
+    if rainfall_rate >= f_p or Hp > 0:
         # activate all bins
         z_fronts = activate_ponded_bins(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], dt)
         # Recompute f_p after seeding (newly seeded bins now contribute)
         f_p = potential_infiltration_rate(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp)
 
-        z_new = RK4(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], dt, Hp)
+        z_new = RK4(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp, dt)
 
         # Net change in ponded depth: rain in minus infiltration out
         # If Hp > 0, it also drains at f_p (part of f_actual is from Hp)
@@ -249,20 +249,13 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
 
         #get the index from the closest theta bin
         idx = (np.abs(bins['theta_bins'] - theta_surf)).argmin()
-        
-        #select only the bins that should be active for this infiltration rate
-        sliced = {
-            key: value[:idx]
-            for key, value in bins.items()
-            if isinstance(value, np.ndarray)
-        }
 
         #set the infiltration depth for inactive front to zero 
         z_fronts[idx:] = 0
 
         active = z_fronts > 0.0
         z_new = RK4(
-            z_fronts, sliced['h_bins'], sliced['K_bins'], bins['delta_theta'], dt, Hp, active=active
+            z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp, dt, active=active
         )
         Hp_new   = 0.0
         f_actual = rainfall_rate
@@ -277,15 +270,15 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
 def capillary_relax (z_fronts):
     '''
     Use capillary relaxation to prevent the water in the coarser porse to take over 
-    the water in the smaller pores
+    the water in the smaller pores - sort only the active bins in descending order
 
 
     '''
     mask = z_fronts > 0
-    z_fronts[mask] =  np.sort(z_fronts[mask])
-    z_fronts = np.flip(z_fronts[mask])
+    if np.any(mask):
+       
+        z_fronts[mask] = np.sort(z_fronts[mask])[::-1]
 
-            
     return z_fronts
 
 
