@@ -82,7 +82,7 @@ def suction_head (alpha, m, theta_d, theta_r, theta_e, n):
     HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
     psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
     print(f'Hcm = {HcM}, psi_d = {psi_d}')
-    return max(HcM, psi_d)
+    return min(HcM, psi_d)
 
 
 def infiltration_per_bin (z_j, Geff, K_j, delta_theta, Hp):
