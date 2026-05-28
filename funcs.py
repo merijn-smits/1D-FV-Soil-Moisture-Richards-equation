@@ -1,9 +1,13 @@
 '''
-Functions to run the 1D finite water content richards by Ogden et al. 2015
+Functions to run the 1D finite water content richards by Ogden et al. 2015 and Talbot and Ogden 2008
 
     Ogden, F.L., Lai, W., Steinke, R.C., Zhu, J., Talbot, C.A., Wilson, J.L. (2015).
     A new general 1-D vadose zone flow solution method.
     Water Resources Research, 51, 4282-4300. doi:10.1002/2015WR017126
+
+    Talbot, C. A., and F. L.Ogden (2008), 
+    A method for computing infiltration and redistribution in a discretized moisture content domain, 
+    Water Resour. Res., 44, W08453, doi:10.1029/2008WR006815.
 
 '''
 import numpy as np
@@ -46,7 +50,7 @@ def h_theta (theta, theta_r, theta_e, alpha, m, n):
 
 ######## BIN DISCRETIZATION ######
 
-def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max):
+def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol = 0.0005):
     '''
     create finite volume soil moisture bins with unique hydraulic properties
     '''
@@ -58,12 +62,33 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max):
     K_bins = K_unsat(theta_bins, theta_r, theta_e, labda, m, Ks)
     h_bins = h_theta(theta_bins, theta_r, theta_e, alpha, m, n)
     h_bins = np.minimum(h_bins, h_max)
+    h_bins = np.maximum(h_bins, h_min)
+
+    '''
+    calculate the seeding depth to initialise infiltration (Ogden and Talbot, 2008)
+    This is needed because infiltration (Ogden eq. 18) wil become singular for depth = 0 
+    Thefore the Green-Ampt cumulative infiltration equation is used to iteratively determine the infiltration
+
+    F = Ksat * t + psi_f * Delta_theta * ln(1 + F / (psi_f * Delta_theta))
+    ''' 
+
+    Geff = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2) # from Morel Seytoux 1996
+    dry_bins = np.zeros(len(K_bins))
+    for j, k in enumerate(K_bins) :
+        diff = 1 
+        F = 100
+        while abs(diff) > tol :
+            F_new = k*dt + Geff*(theta_e-theta_r)* np.log(1 + F/ (Geff*(theta_e-theta_r)))
+            diff = F - F_new
+            F = F_new
+        dry_bins[j] = F
 
     return{
         'delta_theta': delta_th,
         'theta_bins' : theta_bins,
         'K_bins'     : K_bins,
-        'h_bins'     : h_bins 
+        'h_bins'     : h_bins,
+        'dry_depth'  : dry_bins
     }
 
 
@@ -72,20 +97,10 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max):
 Calculate the infiltration depth using the Equation form Ogden and solve it numerically using Runge-Kutta 4
 '''
 
-def suction_head (alpha, m, theta_d, theta_r, theta_e, n):
-    '''
-    Calculate the value for Geff (Ogden 2015) / psi_f (Rawls&Brakensiek) / HcM (Morel Seytoux 1996).
-    This is the Matric suction from the Green Ampt equation in Ogden (2015) defined as the minimum of |psi(theta_d)| and HcM 
-    with theta_d as the theta of the highest theta bin containing water or HcM from Morel Seytoux (1996):
-        HcM = 1/alpha * (0.046m + 2.07m^2 + 19.5m^3)/(1 + 4.7m + 16m2)
-    '''
-    HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
-    psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
-    print(f'Hcm = {HcM}, psi_d = {psi_d}')
-    return min(HcM, psi_d)
 
 
-def infiltration_per_bin (z_j, Geff, K_j, delta_theta, Hp):
+
+def infiltration_per_bin (z_j, Geff, , delta_theta, Hp):
     '''
     calculate the infiltration for 1 bin with function
 
@@ -96,11 +111,11 @@ def infiltration_per_bin (z_j, Geff, K_j, delta_theta, Hp):
     '''
     if z_j <= 0:
         return 0
-    return K_j/delta_theta * (1 + (Geff + Hp)/z_j)
+    return K_/delta_theta * (1 + (Geff + Hp)/z_j)
 
-def RK4 (z_fronts, Geff, K_bins, dtheta, Hp, dt, active = None):
+def RK4_all_fronts (z_fronts, Geff, K_bins, dtheta, Hp, dt, active = None):
     '''
-    Use 4-th order Runge-Kutta to advance the ODE one timestep
+    Use 4-th order Runge-Kutta to advance the ODE one timestep (old)
     '''
     # take the amount of active bins
     N = len(z_fronts)
@@ -125,12 +140,123 @@ def RK4 (z_fronts, Geff, K_bins, dtheta, Hp, dt, active = None):
     z_new = z_fronts + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
     return np.maximum(z_new, 0.0)   # fronts cannot be negative
 
+
+def RK4 (z, Geff, theta_d, theta_i, Hp, dt, active = None):
+    '''
+    Use 4-th order Runge-Kutta to advance the ODE one timestep (old)
+    '''
+    # take the amount of active bins
+    N = len(z_fronts)
+    if active is None:
+            active = z_fronts > 0.0
+
+    # calculate for each front infiltration velocity    
+    def rhs(z):
+        dz = np.zeros(N)
+        for j in range(N):
+            if active[j]:
+                dz[j] = infiltration_per_bin(z[j], Geff, theta_d, theta_i, Hp)
+        return dz
+
+    # Calculate the Runge-Kutta steps
+    k1 = rhs(z_fronts)
+    k2 = rhs(z_fronts + 0.5 * dt * k1)
+    k3 = rhs(z_fronts + 0.5 * dt * k2)
+    k4 = rhs(z_fronts + dt * k3)
+
+    # Calculate the new depths of the infiltration front in each bin
+    z_new = z_fronts + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+    return np.maximum(z_new, 0.0)   # fronts cannot be nega
+
+
+
+####### BIN ACTIVATION #####
+'''
+New functions to activate and deactivate bins, depending on rainfall. 
+Idea: add ponded depth and rainfall together and remove the water needed to satisfy the waterdemand for 
+Theta bins from left to right. If bins do not contain water at the moment, the dry bin depth is used (Talbot and Ogden, 2008)
+Only if all theta bins are filled, water is saved as ponded
+
+Still need to think about how to calculate the head from ponded water. 
+For now just use the ponded depth fromk the previous step and add uninfiltrated water at the end to ponded.
+'''
+def infiltration_capacity(z_fronts, Geff, K_bins, dtheta, N, Hp=0.0):
+    """
+    Total potential infiltration rate f_p [cm/day]: the rate at which the soil
+    can accept water given the current front positions and ponded depth.
+
+    f_p / dtheta = sum_j [ K_j * (z_j + h_j + Hp) / (dtheta * z_j) ]   [Ogden 2015, eq. 18 and integrate/sum according to 13]
+    """
+    f_p = 0.0
+    for j in range(len(z_fronts)):
+        if z_fronts[j] > 0.0:
+            f_p += K_bins[j] * (z_fronts[j] + Geff + Hp) /  z_fronts[j]
+    return f_p
+
+def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
+    '''
+    Calculate the value for Geff (Ogden 2015) / psi_f (Rawls&Brakensiek) / HcM (Morel Seytoux 1996).
+    This is the Matric suction/ capillary drive from the Green Ampt equation in Ogden (2015) defined as 
+    the maximum of |psi(theta_d)| and HcM 
+    with theta_d as the theta of the highest theta bin containing water or HcM from Morel Seytoux (1996):
+        HcM = 1/alpha * (0.046m + 2.07m^2 + 19.5m^3)/(1 + 4.7m + 16m2)
+    '''
+    HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
+    psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
+    print(f'Hcm = {HcM}, psi_d = {psi_d}')
+    return max(HcM, psi_d)
+
+def sat_inf (K_theta, dt):
+    '''
+    Calculate infiltration of water in the bins that are filled from top to bottom with water. 
+    Here infiltration = K(θ) * dt  (Ogden 2015, par. 3.7)
+    '''
+    return K_theta * dt
+
+def top_infiltration ():
+    '''
+    Infiltration of bins that are already active
+    '''
+
+def handle_infiltration (rainfall_rate, ponded, dt, z_fronts, max_depth):
+    '''
+    for one time step calculate the infiltration per bin and substract the infiltration from each bin from the total
+    if the infiltration from a bin is more than what is left, function breaks and the infiltration for that bin is teh remainder
+    '''
+    
+    rain_sum = rainfall_rate* dt
+    inf_sum = ponded + rain_sum
+
+    # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
+    # θi is the bin were the water extends form surface to max_depth
+    # θd is the right most bin containing water
+    theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
+    theta_i = bins['theta_bins'][np.sum(z_fronts == max_depth)-1]
+
+    for j in range(len(z_fronts)):
+        if z_fronts[j] >= max_depth:
+            i = K_bins[j] * dt
+        elif z_fronts[j] > 0:
+
+
+
+
+
+    pref = (K_unsat(theta_d)-K_unsat(theta_i))/(theta_d - theta_i)
+
+    for j, z in enumerate(z_fronts):
+
+
+
+
 ###### INFILTRATION INITIALISATION ####
 
 '''
 these functions define what type of infiltration is used (ponded or non-ponded) and 
 activate the infiltration type depending on the rainfall or the ponding
 this will allow variable input for Hp or rainfall instead of a predefined e.g. Hp = 0.0001
+
+These will be replaced by the section above
 '''
 
 def seed_depth(K_j, h_j, dtheta, dt):
@@ -139,7 +265,8 @@ def seed_depth(K_j, h_j, dtheta, dt):
     Derived by integrating dz/dt = K_j * h_j / (dtheta * z_j) for small z:
         z_j * dz_j = K_j * h_j / dtheta * dt  =>  z_j = sqrt(2*K_j*h_j*dt/dtheta)
     """
-    return max(np.sqrt(2.0 * K_j * h_j * dt / dtheta), 1e-9)
+    depth2 = (2.0 * K_j * h_j * dt / dtheta)
+    return np.sqrt(depth2) if depth2 > 0 else 0.0
 
 def activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt):
     """
@@ -153,7 +280,7 @@ def activate_ponded_bins(z_fronts, h_bins, K_bins, dtheta, dt):
     return z_new
 
 
-def potential_infiltration_rate(z_fronts, Geff, K_bins, dtheta, N, Hp=0.0):
+def infiltration_capacity(z_fronts, Geff, K_bins, dtheta, N, Hp=0.0):
     """
     Total potential infiltration rate f_p [cm/day]: the rate at which the soil
     can accept water given the current front positions and ponded depth.
@@ -250,23 +377,29 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
     if rainfall_rate >= f_p or Hp > 0:
         print(f"Ponded: Hp={Hp:.4f}, f_p={f_p:.4f}, rainfall={rainfall_rate}")
     
-    # Activate bins if transitioning to ponded
+        # Activate bins if transitioning to ponded
         if np.any(z_fronts == 0.0):
             z_fronts = activate_ponded_bins(z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], dt)
-            # compute f_p after initial seeding
+            print (z_fronts)
+        
+        # compute f_p after initial seeding
+        theta_d = bins['theta_bins'][np.sum(z_fronts != 0)-1]
+        Geff = suction_head(alpha,m,theta_d,theta_r,theta_e,n)
+        f_p = potential_infiltration_rate(z_fronts, Geff, bins['K_bins'], bins['delta_theta'], Hp)
+        print (f"f_p = {f_p}")
+        # advance the fronts for one time step 
+        z_new = RK4(z_fronts, Geff, bins['K_bins'], bins['delta_theta'], Hp, dt)
 
-            theta_d = bins['theta_bins'][np.sum(z_fronts != 0)-1]
-            Geff = suction_head(alpha,m,theta_d,theta_r,theta_e,n)
-            f_p = potential_infiltration_rate(z_fronts, Geff, bins['K_bins'], bins['delta_theta'], Hp)
-            print (f"f_p = {f_p}")
-            # advance the fronts for one time step    
-            z_new = RK4(z_fronts, Geff, bins['K_bins'], bins['delta_theta'], Hp, dt)
+        #calculate the amount of infiltrated water
+        f_actual = bins['delta_theta'] * np.sum(z_new - z_fronts) / dt
+        print(f'f_actual = {f_actual} cm')
+
 
         # Net change in ponded depth: rain in minus infiltration out
         # If Hp > 0, it also drains at f_p (part of f_actual is from Hp)
         dHp = (rainfall_rate - f_p) * dt
         Hp_new =  max(Hp + dHp, 0.0)
-        f_actual = f_p
+        return z_new, Hp_new, f_actual
 
     # Non-ponded infiltration    
     else:
@@ -278,14 +411,27 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
         idx = (np.abs(bins['theta_bins'] - theta_surf)).argmin()
 
         #set the infiltration depth for inactive front to zero 
-        z_fronts[idx:] = 0
+        z_fronts[idx + 1:] = 0
+
+        # Seed any newly active bins that haven't started yet
+        for j in range(idx + 1):
+            if z_fronts[j] == 0.0:
+                z_fronts[j] = seed_depth(
+                    bins['K_bins'][j], bins['h_bins'][j], bins['delta_theta'], dt
+                )
+
+        # Recompute Geff with updated active set
+        theta_d = bins['theta_bins'][np.sum(z_fronts != 0)-1]
+        Geff = suction_head(alpha, m, theta_d, theta_r, theta_e, n)
+
 
         active = z_fronts > 0.0
         z_new = RK4(
-            z_fronts, bins['h_bins'], bins['K_bins'], bins['delta_theta'], Hp, dt, active=active
+            z_fronts, Geff, bins['K_bins'], bins['delta_theta'], Hp, dt, active=active
         )
         Hp_new   = 0.0
         f_actual = rainfall_rate
+        return z_new, Hp_new, f_actual
 
     z_new = np.minimum(z_new, max_depth)
     return z_new, Hp_new, f_actual

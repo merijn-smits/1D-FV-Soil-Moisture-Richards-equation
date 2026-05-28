@@ -18,4 +18,5 @@
 - clean up 'bins' input
 - add groundwater module
 - add layered soils
+- improve speed by changing for loops to arrays/masks
 
