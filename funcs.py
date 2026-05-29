@@ -73,22 +73,29 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
     ''' 
 
     Geff = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2) # from Morel Seytoux 1996
+
+    cumK = np.cumsum(K_bins) #use this from c-code
+
+
     dry_bins = np.zeros(len(K_bins))
     for j, k in enumerate(K_bins) :
         diff = 1 
-        F = 100
+        F = 10
         while abs(diff) > tol :
             F_new = k*dt + Geff*(theta_e-theta_r)* np.log(1 + F/ (Geff*(theta_e-theta_r)))
             diff = F - F_new
             F = F_new
-        dry_bins[j] = F
+        dry_bins[-(j+1)] = F #as a capillary relaxation after the 'initial' infiltration step, no clue if this is valid?
+    
+
 
     return{
         'delta_theta': delta_th,
         'theta_bins' : theta_bins,
         'K_bins'     : K_bins,
         'h_bins'     : h_bins,
-        'dry_depth'  : dry_bins
+        'dry_depth'  : dry_bins,
+        'cum_K'      : cumK
     }
 
 
@@ -97,76 +104,26 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
 Calculate the infiltration depth using the Equation form Ogden and solve it numerically using Runge-Kutta 4
 '''
 
-
-
-
-def infiltration_per_bin (z_j, Geff, , delta_theta, Hp):
+def RK4 (z, Geff, MoL, Hp, dt, active = None):
     '''
-    calculate the infiltration for 1 bin with function
-
-    dz_j/dt = K_j * (z_j + h_j + Hp) / (dtheta * z_j)
-    or in alternative form:
-    dz_j/dt = K_j/delta_theta * (1 + (h_j + Hp)/z_j)
-    which when multiplied by delta theta is the Green-Ampt
+    Use 4-th order Runge-Kutta to advance the ODE one timestep for 1 bin
+    ODE: dz_j/dt = ΅((K(θd)-K(θi)) / (θd-θi) * (1 + (h_j + Hp)/z_j)
     '''
-    if z_j <= 0:
-        return 0
-    return K_/delta_theta * (1 + (Geff + Hp)/z_j)
 
-def RK4_all_fronts (z_fronts, Geff, K_bins, dtheta, Hp, dt, active = None):
-    '''
-    Use 4-th order Runge-Kutta to advance the ODE one timestep (old)
-    '''
-    # take the amount of active bins
-    N = len(z_fronts)
-    if active is None:
-            active = z_fronts > 0.0
-
-    # calculate for each front infiltration velocity    
+    # calculate for each front infiltration velocity Ogden eq 18   
     def rhs(z):
-        dz = np.zeros(N)
-        for j in range(N):
-            if active[j]:
-                dz[j] = infiltration_per_bin(z[j], Geff, K_bins[j], dtheta, Hp)
+        dz = MoL * (1 + (Geff + Hp)/z)
         return dz
 
     # Calculate the Runge-Kutta steps
-    k1 = rhs(z_fronts)
-    k2 = rhs(z_fronts + 0.5 * dt * k1)
-    k3 = rhs(z_fronts + 0.5 * dt * k2)
-    k4 = rhs(z_fronts + dt * k3)
+    k1 = rhs(z)
+    k2 = rhs(z + 0.5 * dt * k1)
+    k3 = rhs(z + 0.5 * dt * k2)
+    k4 = rhs(z + dt * k3)
 
-    # Calculate the new depths of the infiltration front in each bin
-    z_new = z_fronts + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-    return np.maximum(z_new, 0.0)   # fronts cannot be negative
-
-
-def RK4 (z, Geff, theta_d, theta_i, Hp, dt, active = None):
-    '''
-    Use 4-th order Runge-Kutta to advance the ODE one timestep (old)
-    '''
-    # take the amount of active bins
-    N = len(z_fronts)
-    if active is None:
-            active = z_fronts > 0.0
-
-    # calculate for each front infiltration velocity    
-    def rhs(z):
-        dz = np.zeros(N)
-        for j in range(N):
-            if active[j]:
-                dz[j] = infiltration_per_bin(z[j], Geff, theta_d, theta_i, Hp)
-        return dz
-
-    # Calculate the Runge-Kutta steps
-    k1 = rhs(z_fronts)
-    k2 = rhs(z_fronts + 0.5 * dt * k1)
-    k3 = rhs(z_fronts + 0.5 * dt * k2)
-    k4 = rhs(z_fronts + dt * k3)
-
-    # Calculate the new depths of the infiltration front in each bin
-    z_new = z_fronts + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
-    return np.maximum(z_new, 0.0)   # fronts cannot be nega
+    # Calculate the front advance
+    dz = (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+    return np.maximum(dz, 0.0)   # fronts only go down
 
 
 
@@ -206,45 +163,83 @@ def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
     print(f'Hcm = {HcM}, psi_d = {psi_d}')
     return max(HcM, psi_d)
 
-def sat_inf (K_theta, dt):
-    '''
-    Calculate infiltration of water in the bins that are filled from top to bottom with water. 
-    Here infiltration = K(θ) * dt  (Ogden 2015, par. 3.7)
-    '''
-    return K_theta * dt
 
-def top_infiltration ():
-    '''
-    Infiltration of bins that are already active
-    '''
 
-def handle_infiltration (rainfall_rate, ponded, dt, z_fronts, max_depth):
+def handle_infiltration (rainfall_rate, bins, z_fronts, 
+                        alpha, m, n, theta_r, theta_e,
+                        dt, Hp, max_depth):
     '''
     for one time step calculate the infiltration per bin and substract the infiltration from each bin from the total
-    if the infiltration from a bin is more than what is left, function breaks and the infiltration for that bin is teh remainder
+    if the infiltration from a bin is more than what is left, function breaks and the infiltration for that bin is the remainder
     '''
     
-    rain_sum = rainfall_rate* dt
-    inf_sum = ponded + rain_sum
+    rain_sum = rainfall_rate* dt 
+    water_available = Hp + rain_sum # this thus creates that there is no ponded head effect from rainfall during this timestep
 
     # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
     # θi is the bin were the water extends form surface to max_depth
+    sat_idx = np.where(z_fronts >= max_depth)[0]
+    if len(sat_idx) == 0:
+        theta_i = theta_init
+    else:
+        theta_i = bins['theta_bins'][sat_idx[-1]]
+    #theta_i = max(bins['theta_bins'][np.sum(z_fronts == max_depth)-2], theta_r)# -2 because the initial is assumed at the left edge of the bin (c)
+
     # θd is the right most bin containing water
-    theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
-    theta_i = bins['theta_bins'][np.sum(z_fronts == max_depth)-1]
+    active_idx = np.where(z_fronts > 0)[0]
+    if len(active_idx):
+        theta_d = bins['theta_bins'][active_idx[-1]]
+    else:
+        theta_d = theta_i
+    #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
+    #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
+    #this is the same for all bins
+    MoL = ((bins['cum_K'][bins['theta_bins']==theta_d] - bins['cum_K'][bins['theta_bins']==theta_i])
+            /
+           (theta_d - theta_i)).item()
 
-    for j in range(len(z_fronts)):
-        if z_fronts[j] >= max_depth:
-            i = K_bins[j] * dt
-        elif z_fronts[j] > 0:
+    #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
+    Geff = effective_cap_drive(alpha, m, theta_d, theta_r, theta_e, n)
+    print(
+            f"theta_i={theta_i}",
+            f"theta_d={theta_d}",
+            f"MoL={MoL}",
+            f"Geff={Geff}"
+        )
 
+    z_new = np.copy(z_fronts)
+    K_bins = bins['K_bins']
+    delta_theta = float(bins['delta_theta'])
 
+    '''
+    calculate the increase in front depth (dz) according to Ogden 2015 par. 3.7 and Eq 18
 
+    '''
+    while water_available > 1e-5:   #will not be exactly 0 because of numerics
+        for j in range(len(z_fronts)):
+            if z_fronts[j] >= max_depth:
+                dz = K_bins[j] *dt/delta_theta #this is and front advancement [cm]
+                print(f'bin {j} saturated')
+            elif z_fronts[j] > 0:
+                dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
+                print(f'bin {j} already active')
+            else:
+                dz = RK4(bins['dry_depth'][j], Geff, MoL, Hp, dt)
+                print(f'bin {j} activated')
+            
+            demand = dz * delta_theta #this computes the water depth that is infiltrated in this bin and in this timestep
+            if demand <= water_available:              
+                z_new[j] += dz
+                water_available -= demand
+            else:
+                z_new[j] += water_available / delta_theta
+                water_available = 0
+                break            
+            #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
+            #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
+    return z_new, water_available 
+        
 
-
-    pref = (K_unsat(theta_d)-K_unsat(theta_i))/(theta_d - theta_i)
-
-    for j, z in enumerate(z_fronts):
 
 
 
@@ -257,7 +252,38 @@ activate the infiltration type depending on the rainfall or the ponding
 this will allow variable input for Hp or rainfall instead of a predefined e.g. Hp = 0.0001
 
 These will be replaced by the section above
+
+
 '''
+
+def RK4_all_fronts (z_fronts, Geff, K_bins, dtheta, Hp, dt, active = None):
+    '''
+    Use 4-th order Runge-Kutta to advance the ODE one timestep (old)
+    '''
+    # take the amount of active bins
+    N = len(z_fronts)
+    if active is None:
+            active = z_fronts > 0.0
+
+    # calculate for each front infiltration velocity    
+    def rhs(z):
+        dz = np.zeros(N)
+        for j in range(N):
+            if active[j]:
+                dz[j] = infiltration_per_bin(z[j], Geff, K_bins[j], dtheta, Hp)
+        return dz
+
+    # Calculate the Runge-Kutta steps
+    k1 = rhs(z_fronts)
+    k2 = rhs(z_fronts + 0.5 * dt * k1)
+    k3 = rhs(z_fronts + 0.5 * dt * k2)
+    k4 = rhs(z_fronts + dt * k3)
+
+    # Calculate the new depths of the infiltration front in each bin
+    z_new = z_fronts + (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+    return np.maximum(z_new, 0.0)   # fronts cannot be negative
+
+
 
 def seed_depth(K_j, h_j, dtheta, dt):
     """

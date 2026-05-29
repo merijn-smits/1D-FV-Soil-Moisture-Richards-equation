@@ -21,21 +21,22 @@ alpha = 0.0128
 
 #test
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
-t_steps = 300
+h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
+t_steps = 720
 #dt = 1/24/60 #in [minutes]
 N = 100
 t_max = 360  *1/24/60 #in [minutes]
 max_depth = 100 #maximum modeling depth in [cm]
-rainfall_rate = 10
+rainfall_rate = 100 #[cm/day]
 dt = t_max/t_steps
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 z_history = np.zeros((t_steps, 100))
-test_bins = funcs.create_bins(N , theta_r, theta_e, labda, alpha,n ,Ks, h_max)
+bins = funcs.create_bins(N , theta_r, theta_e, labda, alpha,n ,Ks, h_max, h_min, dt)
 #init
 
-Hp = 0.1  #initial ponding depth [cm]
+Hp = 0.0 #initial ponding depth [cm]
 theta_init = 0.15
-idx = (np.abs(test_bins['theta_bins'] - theta_init)).argmin()
+idx = (np.abs(bins['theta_bins'] - theta_init)).argmin()
 z_fronts = np.zeros(N)     # remove +0.01 when infiltration initialisation is added
 z_fronts[:idx] = max_depth #set the bins below theta_init active
 
@@ -48,13 +49,9 @@ for i ,t  in enumerate(time_vec):
     z_fronts = funcs.capillary_relax(z_fronts)
     z_history[i,:] = z_fronts
 
-z_fronts, Hp, f_actual = funcs.handle_surface_flux(
-                            rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, 
-                            test_bins, z_fronts, alpha, n)
-
-z_fronts = funcs.capillary_relax(z_fronts)
-        
-z_fronts  = funcs.RK4(z_fronts, test_bins['h_bins'], test_bins['K_bins'], test_bins['delta_theta'], Hp, dt)
+z_fronts, Hp = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
+                                          alpha, m, n, theta_r, theta_e,
+                                          dt, Hp, max_depth)
 
 
 
