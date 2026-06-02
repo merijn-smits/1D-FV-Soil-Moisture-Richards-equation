@@ -152,7 +152,7 @@ def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol =
         elif z_new < minimum_dry_depth:
             z_new = minimum_dry_depth
         dry_depth[j] = z_new
-        bins['dry_depth'] = np.flip(np.sort(dry_depth))
+        bins['dry_depth'] = np.flip(np.sort(dry_depth)) #flip as capillary relaxation step
     return bins
 
 
@@ -224,7 +224,7 @@ def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
 
 def handle_infiltration (rainfall_rate, bins, z_fronts, 
                         alpha, m, n, theta_r, theta_e,
-                        dt, Hp, max_depth, theta_init):
+                        dt, Hp, max_depth, theta_init,N):
     '''
     for one time step calculate the infiltration per bin and substract the infiltration from each bin from the total
     if the infiltration from a bin is more than what is left, function breaks and the infiltration for that bin is the remainder
@@ -235,10 +235,11 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
 
     # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
     # θi is the left most bin were the water extends form surface to max_depth
-    sat_idx = np.where(z_fronts >= max_depth)[0]
+    sat_idx = np.where(z_fronts >= max_depth)[0] 
     if len(sat_idx) == 0:
         theta_i = theta_r
-        print('if')
+    elif len(sat_idx) == N: # prevent problems when all bins are completetly full
+        theta_i = bins['theta_bins'][np.max(sat_idx)+1]
     else:
         theta_i = bins['theta_bins'][np.max(sat_idx)]
     print(f'theta_i = {theta_i}')
@@ -246,11 +247,12 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
 
     # θd is the right most bin containing water
     active_idx = np.where((z_fronts > 0) & (z_fronts < max_depth))[0] # get the array of bins that are active
+    print(f'active bins = {active_idx}')
     if len(active_idx) != 0:
-        theta_d = bins['theta_bins'][active_idx]
         print('if')
+        theta_d = bins['theta_bins'][np.max(active_idx)]
     else:
-        theta_d = bins['theta_bins'][np.max(sat_idx)+1]
+        theta_d = bins['theta_bins'][np.max(sat_idx)+1]  #FIXLATER + 1 is to regulate initialisation where there are only completely full and empty bins
     print(f'theta_d = {theta_d}')
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
@@ -280,13 +282,13 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
         for j in range(len(z_fronts)):
             if z_fronts[j] >= max_depth:
                 dz = K_bins[j] *dt/delta_theta #this is and front advancement [cm]
-                print(f'bin {j} saturated')
+                #print(f'bin {j} saturated')
             elif z_fronts[j] > 0:
                 dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
-                print(f'bin {j} already active')
+                #print(f'bin {j} already active')
             else:
                 dz = RK4(bins['dry_depth'][j], Geff, MoL, Hp, dt)
-                print(f'bin {j} activated')
+                #print(f'bin {j} activated')
             
             demand = dz * delta_theta #this computes the water depth that is infiltrated in this bin and in this timestep
             if demand <= water_available:              
@@ -295,10 +297,11 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             else:
                 z_new[j] += water_available / delta_theta
                 water_available = 0
+                print(f'last bin used = {j}')
                 break
 
             z_new[j] = np.minimum(z_new[j], max_depth)            
-            print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
+            #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
             #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
     return z_new, water_available 
         
@@ -314,7 +317,8 @@ def capillary_relax (z_fronts, max_depth):
 
     '''
     mask = np.where((z_fronts > 0) & (z_fronts < max_depth))[0]
-    z_fronts[mask] = np.flip(z_fronts[mask])
+    print(f'mask = {mask}')
+    z_fronts[mask] = np.flip(np.sort(z_fronts[mask]))
 
     return z_fronts
 

@@ -42,16 +42,19 @@ z_fronts[:idx] = max_depth #set the bins below theta_init active
 
 
 for i ,t  in enumerate(time_vec):
-    z_fronts  = funcs.RK4(z_fronts, test_bins['h_bins'], test_bins['K_bins'], test_bins['delta_theta'], Hp, dt)
-    # z_fronts, Hp, f_actual = funcs.handle_surface_flux(
-    #                             rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, 
-    #                             test_bins, z_fronts= z_fronts)
+    z_fronts, Hp = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
+                                            alpha, m, n, theta_r, theta_e,
+                                            dt, Hp, max_depth, theta_init)
     z_fronts = funcs.capillary_relax(z_fronts)
     z_history[i,:] = z_fronts
 
 z_fronts, Hp = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
-                                          alpha, m, n, theta_r, theta_e,
-                                          dt, Hp, max_depth, theta_init)
+                                        alpha, m, n, theta_r, theta_e,
+                                        dt, Hp, max_depth, theta_init, N)
+z_fronts = funcs.capillary_relax(z_fronts, max_depth)
+
+
+
 
 
 
