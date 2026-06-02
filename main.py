@@ -51,7 +51,7 @@ for i ,t  in enumerate(time_vec):
 
 z_fronts, Hp = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
                                           alpha, m, n, theta_r, theta_e,
-                                          dt, Hp, max_depth)
+                                          dt, Hp, max_depth, theta_init)
 
 
 

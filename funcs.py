@@ -41,7 +41,7 @@ def theta_h (h, theta_r, theta_e, alpha, m, n):
 
 def h_theta (theta, theta_r, theta_e, alpha, m, n):
     '''
-    calculate h from Se using van Genuchten 1980 (inverting the formula)
+    calculate h from theta using van Genuchten 1980 (inverting the 
     '''
     Se = effective_water_content(theta, theta_r, theta_e)
     return (1/alpha) * (Se**(-1/m)-1)**(1/n)
@@ -61,42 +61,99 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
     # calculate hydraulic properties of each bin 
     K_bins = K_unsat(theta_bins, theta_r, theta_e, labda, m, Ks)
     h_bins = h_theta(theta_bins, theta_r, theta_e, alpha, m, n)
+    h_bins[N-1] = 0.5*(h_bins[N-1] +h_bins[N-2]) #take the midpoint of the last bin to prevent singularity since h=0 otherwise 
     h_bins = np.minimum(h_bins, h_max)
     h_bins = np.maximum(h_bins, h_min)
 
     '''
     calculate the seeding depth to initialise infiltration (Ogden and Talbot, 2008)
     This is needed because infiltration (Ogden eq. 18) wil become singular for depth = 0 
-    Thefore the Green-Ampt cumulative infiltration equation is used to iteratively determine the infiltration
+    Thefore the Green-Ampt infiltration equation is used to iteratively determine the infiltration at the start
 
     F = Ksat * t + psi_f * Delta_theta * ln(1 + F / (psi_f * Delta_theta))
+
+    this only gives the maximum inifltration depth
+    Next, the infiltration depth is calulated per bin
     ''' 
 
+    
+    #dry_bins[-(j+1)] = F #as a capillary relaxation after the 'initial' infiltration step, no clue if this is valid?
+    
+    bins = {
+            'delta_theta': delta_th,
+            'theta_bins' : theta_bins,
+            'K_bins'     : K_bins,
+            'h_bins'     : h_bins,
+        }
+
+    GA_depth = G_A_dry_depth(alpha,m,n,theta_e, theta_r, Ks, dt)
+    bins = (T_O_dry_depth(bins, dt, 1e-4, GA_depth))
+    return bins
+ 
+
+def G_A_dry_depth (alpha, m, n, theta_e, theta_r, Ks, dt, tol = 0.005):
+    '''
+    calculate the maximum dry depth using the GA equatuion;
+
+    F = Ks * dt + Geff * eff_porosity * ln(1 + z_old/Geff) - z_old * eff_porosity
+
+    use newton raphson to find Z for the first timestep
+    '''
     Geff = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2) # from Morel Seytoux 1996
 
-    cumK = np.cumsum(K_bins) #use this from c-code
 
+    diff = 1 
+    z_old = Geff
+    while abs(diff) > tol :
+        f = Ks*dt + Geff*(theta_e-theta_r)* np.log(1 + z_old / Geff) - z_old * (theta_e-theta_r)
+        f_prime = Geff * (theta_e-theta_r) / (Geff + z_old) - (theta_e-theta_r)
+        if(f_prime == 0.0):
+            # If f prime is zero, set z to the depth calculated during this step.-
+            z_new = Ks * dt / (theta_e-theta_r) + Geff * np.log(1 + Ks * dt / ((theta_e-theta_r)*Geff))
+        else:
+            z_new = z_old - (f / f_prime) # Newton rapson step
+        diff = z_old - z_new
+        z_old = z_new
+        print(f'diff = {diff}, z_new = {z_new}')
+    return z_new * 10 #from c code, then why use this function at all, it does not limit anything yet
 
-    dry_bins = np.zeros(len(K_bins))
-    for j, k in enumerate(K_bins) :
-        diff = 1 
-        F = 10
-        while abs(diff) > tol :
-            F_new = k*dt + Geff*(theta_e-theta_r)* np.log(1 + F/ (Geff*(theta_e-theta_r)))
-            diff = F - F_new
-            F = F_new
-        dry_bins[-(j+1)] = F #as a capillary relaxation after the 'initial' infiltration step, no clue if this is valid?
-    
+def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol = 0.005):
+    '''
+    calculate the dry depth to prevent singularity 
+    Using the Green-Ampt infiltration depth formula, the maximum infiltration depth is first calculated.
 
-
-    return{
-        'delta_theta': delta_th,
-        'theta_bins' : theta_bins,
-        'K_bins'     : K_bins,
-        'h_bins'     : h_bins,
-        'dry_depth'  : dry_bins,
-        'cum_K'      : cumK
-    }
+    Then, using the Talbot Ogden depth (Talbot 2008) the initial infiltration depth per bin is calculated. 
+    using Newton Raphson
+    '''
+    k = bins['K_bins']
+    h = bins['h_bins']
+    delta_theta = bins['delta_theta']
+    dry_depth = np.zeros(len(bins['K_bins']))
+    for j in range(len(bins['K_bins'])):
+        z_old = k[j]* dt
+        diff = 10
+        iteration = 0
+        while abs(diff) > tol and iteration < iter_lim:
+            f = (k[j]* dt + h[j] * delta_theta * np.log(1 + (z_old / h[j]))) - z_old*delta_theta
+            f_prime = (delta_theta / (1 + (z_old/h[j]))) - delta_theta
+            #print(f'f = {f}, f_prime = {f_prime}')
+            if f_prime == 0.0 :
+                # if the slope is zero, set z_new to the minimum depth to avoid singularity.
+                z_new = minimum_dry_depth
+                diff = 0.0
+            else:
+                z_new = z_old - (f / f_prime)
+                diff = z_old - z_new
+                z_old = z_new
+            iteration += 1
+            #print(f'iter = {iteration}, diff = {diff}, z_new = {z_new}, bin = {j}') 
+        if z_new > GA_depth:
+            z_new = GA_depth
+        elif z_new < minimum_dry_depth:
+            z_new = minimum_dry_depth
+        dry_depth[j] = z_new
+        bins['dry_depth'] = np.flip(np.sort(dry_depth))
+    return bins
 
 
 ######## INFILTRATION FUNCTIONS #####
@@ -167,7 +224,7 @@ def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
 
 def handle_infiltration (rainfall_rate, bins, z_fronts, 
                         alpha, m, n, theta_r, theta_e,
-                        dt, Hp, max_depth):
+                        dt, Hp, max_depth, theta_init):
     '''
     for one time step calculate the infiltration per bin and substract the infiltration from each bin from the total
     if the infiltration from a bin is more than what is left, function breaks and the infiltration for that bin is the remainder
@@ -177,24 +234,28 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     water_available = Hp + rain_sum # this thus creates that there is no ponded head effect from rainfall during this timestep
 
     # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
-    # θi is the bin were the water extends form surface to max_depth
+    # θi is the left most bin were the water extends form surface to max_depth
     sat_idx = np.where(z_fronts >= max_depth)[0]
     if len(sat_idx) == 0:
-        theta_i = theta_init
+        theta_i = theta_r
+        print('if')
     else:
-        theta_i = bins['theta_bins'][sat_idx[-1]]
-    #theta_i = max(bins['theta_bins'][np.sum(z_fronts == max_depth)-2], theta_r)# -2 because the initial is assumed at the left edge of the bin (c)
+        theta_i = bins['theta_bins'][np.max(sat_idx)]
+    print(f'theta_i = {theta_i}')
+
 
     # θd is the right most bin containing water
-    active_idx = np.where(z_fronts > 0)[0]
-    if len(active_idx):
-        theta_d = bins['theta_bins'][active_idx[-1]]
+    active_idx = np.where((z_fronts > 0) & (z_fronts < max_depth))[0] # get the array of bins that are active
+    if len(active_idx) != 0:
+        theta_d = bins['theta_bins'][active_idx]
+        print('if')
     else:
-        theta_d = theta_i
+        theta_d = bins['theta_bins'][np.max(sat_idx)+1]
+    print(f'theta_d = {theta_d}')
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
     #this is the same for all bins
-    MoL = ((bins['cum_K'][bins['theta_bins']==theta_d] - bins['cum_K'][bins['theta_bins']==theta_i])
+    MoL = ((bins['K_bins'][bins['theta_bins']==theta_d] - bins['K_bins'][bins['theta_bins']==theta_i])
             /
            (theta_d - theta_i)).item()
 
@@ -234,11 +295,30 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             else:
                 z_new[j] += water_available / delta_theta
                 water_available = 0
-                break            
-            #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
+                break
+
+            z_new[j] = np.minimum(z_new[j], max_depth)            
+            print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
             #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
     return z_new, water_available 
         
+
+
+###### CAPILLARY RELAXATION ####
+
+def capillary_relax (z_fronts, max_depth):
+    '''
+    Use capillary relaxation to prevent the water in the coarser porse to take over 
+    the water in the smaller pores - sort only the active bins in descending order
+
+
+    '''
+    mask = np.where((z_fronts > 0) & (z_fronts < max_depth))[0]
+    z_fronts[mask] = np.flip(z_fronts[mask])
+
+    return z_fronts
+
+
 
 
 
@@ -461,24 +541,5 @@ def handle_surface_flux(rainfall_rate, Hp, theta_r, theta_e, m, Ks, labda, dt, b
 
     z_new = np.minimum(z_new, max_depth)
     return z_new, Hp_new, f_actual
-
-
-
-###### CAPILLARY RELAXATION ####
-
-def capillary_relax (z_fronts):
-    '''
-    Use capillary relaxation to prevent the water in the coarser porse to take over 
-    the water in the smaller pores - sort only the active bins in descending order
-
-
-    '''
-    mask = z_fronts > 0
-    if np.any(mask):
-       
-        z_fronts[mask] = np.sort(z_fronts[mask])[::-1]
-
-    return z_fronts
-
 
 
