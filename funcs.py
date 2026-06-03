@@ -149,7 +149,7 @@ def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol =
         elif z_new < minimum_dry_depth:
             z_new = minimum_dry_depth
         dry_depth[j] = z_new
-        bins['dry_depth'] = dry_depth #np.flip(np.sort(dry_depth)) #flip as capillary relaxation step
+        bins['dry_depth'] = np.flip(np.sort(dry_depth)) #flip as capillary relaxation step
     return bins
 
 
