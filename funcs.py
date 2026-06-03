@@ -75,9 +75,6 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
     this only gives the maximum inifltration depth
     Next, the infiltration depth is calulated per bin
     ''' 
-
-    
-    #dry_bins[-(j+1)] = F #as a capillary relaxation after the 'initial' infiltration step, no clue if this is valid?
     
     bins = {
             'delta_theta': delta_th,
@@ -152,7 +149,7 @@ def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol =
         elif z_new < minimum_dry_depth:
             z_new = minimum_dry_depth
         dry_depth[j] = z_new
-        bins['dry_depth'] = np.flip(np.sort(dry_depth)) #flip as capillary relaxation step
+        bins['dry_depth'] = dry_depth #np.flip(np.sort(dry_depth)) #flip as capillary relaxation step
     return bins
 
 
@@ -217,7 +214,7 @@ def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
     '''
     HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
     psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
-    print(f'Hcm = {HcM}, psi_d = {psi_d}')
+    #print(f'Hcm = {HcM}, psi_d = {psi_d}')
     return max(HcM, psi_d)
 
 
@@ -242,18 +239,17 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
         theta_i = bins['theta_bins'][np.max(sat_idx)+1]
     else:
         theta_i = bins['theta_bins'][np.max(sat_idx)]
-    print(f'theta_i = {theta_i}')
+    #print(f'theta_i = {theta_i}')
 
 
     # θd is the right most bin containing water
     active_idx = np.where((z_fronts > 0) & (z_fronts < max_depth))[0] # get the array of bins that are active
-    print(f'active bins = {active_idx}')
+    #print(f'active bins = {active_idx}')
     if len(active_idx) != 0:
-        print('if')
         theta_d = bins['theta_bins'][np.max(active_idx)]
     else:
         theta_d = bins['theta_bins'][np.max(sat_idx)+1]  #FIXLATER + 1 is to regulate initialisation where there are only completely full and empty bins
-    print(f'theta_d = {theta_d}')
+    #print(f'theta_d = {theta_d}')
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
     #this is the same for all bins
@@ -263,12 +259,14 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
 
     #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
     Geff = effective_cap_drive(alpha, m, theta_d, theta_r, theta_e, n)
+    '''
     print(
             f"theta_i={theta_i}",
             f"theta_d={theta_d}",
             f"MoL={MoL}",
             f"Geff={Geff}"
         )
+    '''
 
     z_new = np.copy(z_fronts)
     K_bins = bins['K_bins']
@@ -297,13 +295,66 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             else:
                 z_new[j] += water_available / delta_theta
                 water_available = 0
-                print(f'last bin used = {j}')
+                #print(f'last bin used = {j}')
                 break
 
             z_new[j] = np.minimum(z_new[j], max_depth)            
             #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
             #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
     return z_new, water_available 
+
+##### FALLING SLUGS #####
+'''
+Create slugs when rainfall is less then demand, 
+advance the slugs through the soil, 
+merge overlapping slugs,
+merge slugs with infiltration fronts if these overtake slugs
+FIXLATER merge slugs to groundwater
+FIXLATER check how multiple sulgs in one bin behave
+'''
+
+
+def init_detach_slugs (z_fronts):
+    '''
+    Initiate falling slugs when rainfall supply is less then the demand from the activated bins.
+    gives a list of dicts 
+
+    '''
+    slugs = []
+    for j, z_j in enumerate(z_fronts):
+        if z_j > 0.0:
+            slugs.append({
+                'bin':   j,
+                'z_top': 0.0,
+                'z_bot': z_j,
+            })
+    return slugs
+
+def advance_slugs (slugs,K_bins, delta_theta, dt):
+    '''
+    advance the infiltration slugs for one timestep using Ogden eq 19
+    FIXLATER change to RK4 for accuracy
+    '''
+    for slug in slugs:
+        j = slug['bin']
+        dzdt = (K_bins[j]-K_bins[j-1])/delta_theta
+        slug['z_top'] += dzdt * dt
+        slug['z_bot'] += dzdt * dt
+    return slugs
+
+def merge_slugs ():
+    '''
+    Function to merge slugs that collide. Fronts that go to a higher theta have higher speeds and therefore may collide with either 
+    another falling slug or FIXLATER capillary groundwater
+    Logic:
+    since all slugs in a bin have the same dz/dt the overtaking can only be caused by capillary relaxation
+    if 
+    I am doubting whether this method is mass conservative..
+    '''
+
+
+
+
         
 
 
@@ -317,7 +368,7 @@ def capillary_relax (z_fronts, max_depth):
 
     '''
     mask = np.where((z_fronts > 0) & (z_fronts < max_depth))[0]
-    print(f'mask = {mask}')
+    #print(f'mask = {mask}')
     z_fronts[mask] = np.flip(np.sort(z_fronts[mask]))
 
     return z_fronts
