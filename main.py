@@ -26,12 +26,12 @@ alpha = 0.0128
 #test
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
 h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
-t_steps = 720
+t_steps = 120
 #dt = 1/24/60 #in [minutes]
 N = 100
-t_max = 360  *1/24/60 #in [minutes]
-max_depth = 100 #maximum modeling depth in [cm]
-rainfall_rate = 10 #[cm/day]
+t_max = 60  *1/24/60 #in [minutes]
+max_depth = 20 #maximum modeling depth in [cm]
+rainfall_rate = 100 #[cm/day]
 dt = t_max/t_steps
 print(dt * 60*24 ) # print timestep in minutes
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
@@ -45,7 +45,19 @@ z_fronts = np.zeros(N)     # remove +0.01 when infiltration initialisation is ad
 z_history = np.zeros((t_steps, 100))
 z_fronts[:idx] = max_depth #set the bins below theta_init active
 
+'''
+# one by one manual loop
+z_fronts, Hp = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
+                                        alpha, m, n, theta_r, theta_e,
+                                        dt, Hp, max_depth, theta_init, N)
 
+# deactive_fronts = np.where((z_old == z_fronts)  & (z_old != max_depth))[0]
+# slugs = funcs.init_detach_slugs(z_fronts)
+# slugs = advance_slugs()
+z_fronts = funcs.capillary_relax(z_fronts, max_depth)
+#z_old = z_fronts
+'''
+#automatic loop
 for i ,t  in enumerate(time_vec):
     z_fronts, Hp = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
                                             alpha, m, n, theta_r, theta_e,
@@ -78,20 +90,12 @@ plt.show()
 
 anim
 
+
+
+
+
+
 '''
-
-
-z_fronts, Hp = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
-                                        alpha, m, n, theta_r, theta_e,
-                                        dt, Hp, max_depth, theta_init, N)
-
-deactive_fronts = np.where((z_old == z_fronts)  & (z_old != max_depth))[0]
-slugs = funcs.init_detach_slugs(z_fronts)
-slugs = advance_slugs()
-z_fronts = funcs.capillary_relax(z_fronts, max_depth)
-z_old = z_fronts
-
-
 
 
 

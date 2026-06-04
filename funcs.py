@@ -214,7 +214,7 @@ def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
     '''
     HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
     psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
-    #print(f'Hcm = {HcM}, psi_d = {psi_d}')
+    print(f'Hcm = {HcM}, psi_d = {psi_d}')
     return max(HcM, psi_d)
 
 
@@ -258,6 +258,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
            (theta_d - theta_i)).item()
 
     #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
+    # FIXLATER should be dependent on the highest active bin form last iter
     Geff = effective_cap_drive(alpha, m, theta_d, theta_r, theta_e, n)
     '''
     print(
@@ -271,36 +272,64 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     z_new = np.copy(z_fronts)
     K_bins = bins['K_bins']
     delta_theta = float(bins['delta_theta'])
+    max_bin = N-1 #-1 for 0 index, later needed for redistribution
 
     '''
     calculate the increase in front depth (dz) according to Ogden 2015 par. 3.7 and Eq 18
 
     '''
-    while water_available > 1e-5:   #will not be exactly 0 because of numerics
-        for j in range(len(z_fronts)):
-            if z_fronts[j] >= max_depth:
-                dz = K_bins[j] *dt/delta_theta #this is and front advancement [cm]
-                #print(f'bin {j} saturated')
-            elif z_fronts[j] > 0:
-                dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
-                #print(f'bin {j} already active')
-            else:
-                dz = RK4(bins['dry_depth'][j], Geff, MoL, Hp, dt)
-                #print(f'bin {j} activated')
-            
-            demand = dz * delta_theta #this computes the water depth that is infiltrated in this bin and in this timestep
-            if demand <= water_available:              
-                z_new[j] += dz
-                water_available -= demand
-            else:
-                z_new[j] += water_available / delta_theta
-                water_available = 0
-                #print(f'last bin used = {j}')
-                break
+    #while water_available > 1e-5:   #will not be exactly 0 because of numerics
+    for j in range(len(z_fronts)):
+        if z_fronts[j] >= max_depth:
+            dz = K_bins[j] *dt/delta_theta #this is saturated infiltration for bins touching GW [cm]
+            #print(f'bin {j} saturated')
+        elif z_fronts[j] > 0:
+            dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
+            #print(f'bin {j} already active')
+        else:
+            dz = RK4(bins['dry_depth'][j], Geff, MoL, Hp, dt)
+            #print(f'bin {j} activated')
+        
+        demand = dz * delta_theta #this computes the water depth that is potentially infiltrated in this bin and in this timestep
+        if demand <= water_available:              
+            z_new[j] += dz
+            water_available -= demand
+            #print(f'dz = {dz}, demand = {demand}')
+        else:
+            #use last bit of available water for infiltration
+            #print(f'demand = {demand}, water available = {water_available}')
+            z_new[j] += water_available / delta_theta
+            dz = demand / delta_theta - water_available / delta_theta #leftover demand for unsatisfied bins
+            water_available = 0
+            #print(f'no more water avalable for bin {j}, left over dz = {dz}')
 
-            z_new[j] = np.minimum(z_new[j], max_depth)            
-            #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
-            #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
+            #get water from the bins to the right to satisfy the needs to the left
+            while((dz >0) & (max_bin > j)):
+                if(z_fronts[max_bin]> dz):
+                    #if water in the right most bin can satisfy the whole demand of the bin j
+                    z_new[j] += dz 
+                    z_new[max_bin] -= dz
+                    dz = 0
+                    #print(f'full demand of bin {j} satisfied by bin {max_bin}')
+                    max_bin += 1 # to ensure the left over water in the current max bin is also emptied in other bins
+                elif(z_fronts[max_bin]>0):
+                    #if water needs to be taken from more than 1 bin
+                    z_new[j] += z_fronts[max_bin]
+                    dz -= z_fronts[max_bin]
+                    z_new[max_bin]=0
+                    #print(f'all water from {max_bin} to {j}, demand not satisfied')
+                # else:
+                #     print(f'no water left in bin {max_bin}, proceeding')
+                max_bin -= 1
+                #print(f'max_bin = {max_bin}, j = {j}')
+
+
+            #print(f'last bin used = {j}')
+
+        z_new[j] = np.minimum(z_new[j], max_depth)            
+        #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
+        #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
+    print(f'Max bin = {j}, Hp = {Hp}, Geff = {Geff}, θi = {theta_i}, θd = {theta_d}, MoL = {MoL}')
     return z_new, water_available 
 
 ##### FALLING SLUGS #####
