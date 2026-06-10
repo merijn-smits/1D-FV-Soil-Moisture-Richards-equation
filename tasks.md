@@ -1,5 +1,10 @@
 # TASKS #
 
+## Bugs ##
+
+- Geff now once shoots to bin 99 and never drops back to highest value of last iter
+    - make something that pulls water to the left 
+
 ## Current ##
 - ~~time implementation~~
 - ~~capillary relaxation~~

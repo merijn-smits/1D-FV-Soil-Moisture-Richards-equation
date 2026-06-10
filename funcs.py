@@ -191,6 +191,35 @@ Only if all theta bins are filled, water is saved as ponded
 Still need to think about how to calculate the head from ponded water. 
 For now just use the ponded depth fromk the previous step and add uninfiltrated water at the end to ponded.
 '''
+
+def init_theta_d (bins,theta_init, tol, max_iter,N):
+    '''
+    Using newton raphson to calculate a first approximation for θd to prevent the oscillating behaviour
+
+    f(x) = K(θd) - K(θi) / θd - θi
+    f'(x)= K'(θd)*(θd - θi) - (K(θd)- - K(θi)) / (θd - θi)^2    <- quotient rule
+
+    for K'(θd) use the finite difference approximation with 
+
+    K'(θd) =(K(θn+1) - K(θn)) / Δθ
+    where  Δθ is bin width and K(θn+1) - K(θn) can be taken from K_bins
+    '''
+
+    diff = 10
+    theta_bins = bins['theta_bins']
+    K = bins['K_bins']
+    init_bin  = np.argmin(np.abs(theta_bins - theta_init))
+    #init_val = 
+    idx = N -2 #take initially the value that is found 
+    
+    while diff > tol and iter < max_iter:
+        f = (K[idx] - K [init_bin])/(theta_bins[idx] - theta_bins[init_bin])
+        K_prime = (K[idx+1] - K[idx])/(theta_bins[idx+1]- theta_bins[idx])
+        f_prime = ((K_prime * (theta_bins[idx] - theta_bins[init_bin])) - (K[idx] - K [init_bin]))/(theta_bins[idx] - theta_bins[init_bin])**2
+        theta_new = theta_bins[idx] - f/f_prime
+        idx = np.argmin(np.abs(theta_bins - theta_new))
+
+
 def infiltration_capacity(z_fronts, Geff, K_bins, dtheta, N, Hp=0.0):
     """
     Total potential infiltration rate f_p [cm/day]: the rate at which the soil
@@ -288,7 +317,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
             #print(f'bin {j} already active')
         else:
-            dz = RK4(bins['dry_depth'][j], Geff, MoL, Hp, dt)
+            dz = bins['dry_depth'][j]
             #print(f'bin {j} activated')
         
         demand = dz * delta_theta #this computes the water depth that is potentially infiltrated in this bin and in this timestep
@@ -327,11 +356,12 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
 
             #print(f'last bin used = {j}')
 
-        z_new[j] = np.minimum(z_new[j], max_depth)            
+        z_new[j] = np.minimum(z_new[j], max_depth)
+        infiltration = np.sum(z_new * bins['delta_theta'])       
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
     print(f'Max bin = {j}, Hp = {Hp}, Geff = {Geff}, θi = {theta_i}, θd = {theta_d}, MoL = {MoL}')
-    return z_new, water_available 
+    return z_new, water_available, infiltration
 
 ##### FALLING SLUGS #####
 '''
