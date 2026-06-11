@@ -64,6 +64,13 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
     h_bins[N-1] = 0.5*(h_bins[N-1] +h_bins[N-2]) #take the midpoint of the last bin to prevent singularity since h=0 otherwise 
     h_bins = np.minimum(h_bins, h_max)
     h_bins = np.maximum(h_bins, h_min)
+    
+    bins = {
+            'delta_theta': delta_th,
+            'theta_bins' : theta_bins,
+            'K_bins'     : K_bins,
+            'h_bins'     : h_bins,
+        }
 
     '''
     calculate the seeding depth to initialise infiltration (Ogden and Talbot, 2008)
@@ -75,14 +82,6 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
     this only gives the maximum inifltration depth
     Next, the infiltration depth is calulated per bin
     ''' 
-    
-    bins = {
-            'delta_theta': delta_th,
-            'theta_bins' : theta_bins,
-            'K_bins'     : K_bins,
-            'h_bins'     : h_bins,
-        }
-
     GA_depth = G_A_dry_depth(alpha,m,n,theta_e, theta_r, Ks, dt)
     bins = (T_O_dry_depth(bins, dt, 1e-4, GA_depth))
     return bins
@@ -149,7 +148,7 @@ def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol =
         elif z_new < minimum_dry_depth:
             z_new = minimum_dry_depth
         dry_depth[j] = z_new
-        bins['dry_depth'] = np.flip(np.sort(dry_depth)) #flip as capillary relaxation step
+        bins['dry_depth'] = dry_depth #FIXED cap relax is already taken care of later.
     return bins
 
 
@@ -194,6 +193,7 @@ For now just use the ponded depth fromk the previous step and add uninfiltrated 
 
 def init_theta_d (bins,theta_init, tol, max_iter,N):
     '''
+    Experimental:
     Using newton raphson to calculate a first approximation for θd to prevent the oscillating behaviour
 
     f(x) = K(θd) - K(θi) / θd - θi
@@ -222,6 +222,8 @@ def init_theta_d (bins,theta_init, tol, max_iter,N):
 
 def infiltration_capacity(z_fronts, Geff, K_bins, dtheta, N, Hp=0.0):
     """
+    no longer used, remove
+
     Total potential infiltration rate f_p [cm/day]: the rate at which the soil
     can accept water given the current front positions and ponded depth.
 
@@ -302,13 +304,13 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     z_new = np.copy(z_fronts)
     K_bins = bins['K_bins']
     delta_theta = float(bins['delta_theta'])
-    last_non_zero = max(np.where(z_fronts>0)[0])
 
     '''
     calculate the increase in front depth (dz) according to Ogden 2015 par. 3.7 and Eq 18
 
     '''
-    #while water_available > 1e-5:   #will not be exactly 0 because of numerics
+    # in C-code infiltration into fully saturated bins and infiltration intoinfiltration fronts
+    # is split into two separate funcs, why? and is that needed?
     for j in range(len(z_fronts)):
         if z_fronts[j] >= max_depth:
             dz = K_bins[j] *dt/delta_theta #this is saturated infiltration for bins touching GW [cm]
@@ -333,7 +335,10 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             water_available = 0
             #print(f'no more water avalable for bin {j}, left over dz = {dz}')
 
+           
             #get water from the bins to the right to satisfy the needs to the left
+            #first find the currently last active bin
+            last_non_zero = max(np.where(z_new>0)[0])
             while((dz >0) & (last_non_zero > j)):
                 if(z_new[last_non_zero]> dz):
                     #if water in the right most bin can satisfy the whole demand of the bin j
@@ -353,13 +358,14 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
                 #     print(f'no water left in bin {last_non_zero}, proceeding
                 #print(f'last_non_zero = {last_non_zero}, j = {j}')
 
-
+            
             #print(f'last bin used = {j}')
 
         z_new[j] = np.minimum(z_new[j], max_depth)
-        infiltration = np.sum(z_new * bins['delta_theta'])       
+           
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
+    infiltration = np.sum(z_new * bins['delta_theta'])
     print(f'Max bin = {j}, Hp = {Hp}, Geff = {Geff}, θi = {theta_i}, θd = {theta_d}, MoL = {MoL}')
     return z_new, water_available, infiltration
 

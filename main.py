@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
-
+import pandas as pd
+'''
 #Soil params, here Staringreeks B01 (fijn zand) all in [cm/day]
 theta_r = 0.02
 theta_e = 0.427
@@ -12,6 +13,16 @@ n = 1.735
 m = 1-1/n
 labda = 0.981
 alpha = 0.0217
+'''
+#Soil params, here Staringreeks B18 Kleiig veen
+theta_r = 0.0
+theta_e = 0.765
+Ks = 13.14
+n = 1.151
+m = 1-1/n
+labda = 0
+alpha = 0.0205
+
 
 '''
 #Soil params, here Staringreeks B10 (lichte klei)
@@ -71,6 +82,7 @@ for i ,t  in enumerate(time_vec):
     z_history[i,:] = z_fronts
     print(f't = {i}')
 
+results_df  = pd.DataFrame(z_history).T
 
 #plot with theta
 x_theta = bins["theta_bins"]
@@ -129,7 +141,7 @@ y = (bins["K_bins"])
 fig, ax = plt.subplots()
 ax.plot(x, y, marker="o", linestyle="-")
 ax.set_xlabel("Soil moisture θ")
-ax.set_ylabel("Log Hydraulic conductivity K")
+ax.set_ylabel("Hydraulic conductivity K")
 ax.set_title("unsaturated hydraulic conductivity")
 plt.show()
 
