@@ -27,7 +27,6 @@ labda = 0
 alpha = 0.0205
 
 
-
 #Soil params, here Staringreeks B10 (lichte klei)
 theta_r = 0.01
 theta_e = 0.448
@@ -41,14 +40,14 @@ alpha = 0.0128
 #settings
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
 h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
-t_steps = 240
+t_steps = 900
 #dt = 1/24/60 #in [minutes]
 N = 100
 t_max = 60  *1/24/60 #in [minutes]
 max_depth = 20 #maximum modeling depth in [cm]
 rainfall_rate = 100 #[cm/day]
 dt = t_max/t_steps
-print(dt * 60*24 ) # print timestep in minutes
+print(dt * 60*24*60) # print timestep in seconds
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 bins = funcs.create_bins(N , theta_r, theta_e, labda, alpha,n ,Ks, h_max, h_min, dt)
 
@@ -62,7 +61,6 @@ logging.basicConfig (filename = 'messages.log',
                         format = '{levelname}:{name}:{message}',
                         style = '{',
                         level = logging.INFO)
-
 logging.info(f'time = {datetime.now()}')
 
 Hp = 0.0 #initial ponding depth [cm]
@@ -85,7 +83,6 @@ z_fronts, Hp, infiltration = funcs.handle_infiltration (rainfall_rate, bins, z_f
 # slugs = advance_slugs()
 z_fronts = funcs.capillary_relax(z_fronts, max_depth)
 #z_old = z_fronts
-
 '''
 #automatic loop
 for i ,t  in enumerate(time_vec):
@@ -94,6 +91,7 @@ for i ,t  in enumerate(time_vec):
                                             alpha, m, n, theta_r, theta_e,
                                             dt, Hp, max_depth, theta_init,N)                                   
     z_fronts = funcs.capillary_relax(z_fronts, max_depth)
+    logging.info(np.round(z_fronts[95:],3))
     cum_inf[i] = infiltration - z_init
     z_history[i,:] = z_fronts
 results_df  = pd.DataFrame(z_history).T

@@ -197,6 +197,7 @@ For now just use the ponded depth fromk the previous step and add uninfiltrated 
 def init_theta_d (bins,theta_init, tol, max_iter,N):
     '''
     Experimental:
+    use an implicit method to find θd
     Using newton raphson to calculate a first approximation for θd to prevent the oscillating behaviour
 
     f(x) = K(θd) - K(θi) / θd - θi
@@ -274,8 +275,10 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
         theta_i = bins['theta_bins'][np.max(sat_idx)]
 
 
-    # θd is the right most bin containing water
-    active_idx = np.where((z_fronts > 0) & (z_fronts < max_depth))[0]    # get the array of bins that are active
+    # θd is the right most bin containing water 
+    # NEW FIX: only count a bins as active if it has a depth higher then its dry_depth instead of 0
+    # Nope only a cosmetic fix: bins['dry_depth']
+    active_idx = np.where((z_fronts > bins['dry_depth'] ) & (z_fronts < max_depth))[0]    # get the array of bins that are active
     #print(f'active bins = {active_idx}')
     if len(active_idx) != 0:
         theta_d = bins['theta_bins'][np.max(active_idx)]
