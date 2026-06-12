@@ -11,6 +11,9 @@ Functions to run the 1D finite water content richards by Ogden et al. 2015 and T
 
 '''
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 ######## HELPER FUNCTIONS #######
@@ -245,7 +248,6 @@ def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
     '''
     HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
     psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
-    print(f'Hcm = {HcM}, psi_d = {psi_d}')
     return max(HcM, psi_d)
 
 
@@ -270,7 +272,6 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
         theta_i = bins['theta_bins'][np.max(sat_idx)+1]
     else:
         theta_i = bins['theta_bins'][np.max(sat_idx)]
-    print(f'theta_i = {theta_i}')
 
 
     # θd is the right most bin containing water
@@ -312,6 +313,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     # in C-code infiltration into fully saturated bins and infiltration intoinfiltration fronts
     # is split into two separate funcs, why? and is that needed?
     for j in range(len(z_fronts)):
+        #first calculate the potential infiltration rate 
         if z_fronts[j] >= max_depth:
             dz = K_bins[j] *dt/delta_theta #this is saturated infiltration for bins touching GW [cm]
             #print(f'bin {j} saturated')
@@ -322,19 +324,22 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             dz = bins['dry_depth'][j]
             #print(f'bin {j} activated')
         
+        #second calculate the actual infiltration
         demand = dz * delta_theta #this computes the water depth that is potentially infiltrated in this bin and in this timestep
         if demand <= water_available:              
             z_new[j] += dz
             water_available -= demand
             #print(f'dz = {dz}, demand = {demand}')
+            max_bin = j
         else:
             #use last bit of available water for infiltration
             #print(f'demand = {demand}, water available = {water_available}')
             z_new[j] += water_available / delta_theta
             dz = demand / delta_theta - water_available / delta_theta #leftover demand for unsatisfied bins
+            if water_available > 0:
+                logger.info(f'no more water avalable for bin {j}, left over dz = {round(dz,2)}')
             water_available = 0
             #print(f'no more water avalable for bin {j}, left over dz = {dz}')
-
            
             #get water from the bins to the right to satisfy the needs to the left
             #first find the currently last active bin
@@ -345,18 +350,20 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
                     z_new[j] += dz 
                     z_new[last_non_zero] -= dz
                     dz = 0
-                    #print(f'full demand of bin {j} satisfied by bin {last_non_zero}')
+                    logger.info(f'full demand of bin {j} satisfied by bin {last_non_zero}')
                      # to ensure the left over water in the current max bin is also emptied in other bins
                 elif(z_new[last_non_zero]>0):
                     #if water needs to be taken from more than 1 bin
                     z_new[j] += z_new[last_non_zero]
                     dz -= z_new[last_non_zero]
                     z_new[last_non_zero]=0
-                    #print(f'all water from {last_non_zero} to {j}, demand not satisfied')
+                    logger.info(f'all water from {last_non_zero} to {j}, demand not satisfied')
                     last_non_zero -= 1
-                # else:
-                #     print(f'no water left in bin {last_non_zero}, proceeding
+                else:
+                    logger.info(f'no water left in bin {last_non_zero}, proceeding')
                 #print(f'last_non_zero = {last_non_zero}, j = {j}')
+            if z_new[j]>0:
+                max_bin = j
 
             
             #print(f'last bin used = {j}')
@@ -366,7 +373,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
     infiltration = np.sum(z_new * bins['delta_theta'])
-    print(f'Max bin = {j}, Hp = {Hp}, Geff = {Geff}, θi = {theta_i}, θd = {theta_d}, MoL = {MoL}')
+    logger.info(f'Max bin = {max_bin}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {round(theta_i,2)}, θd = {round(theta_d,2)}, MoL = {round(MoL,2)}')
     return z_new, water_available, infiltration
 
 ##### FALLING SLUGS #####

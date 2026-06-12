@@ -14,14 +14,17 @@
         - ~~or cechk out Newton raphson if it performs better~~
 - check inputs for theta_(r/i) and theta_(s/e)
 - ~~review the input for Sf in the infiltration~~
-    - Evaluate Geff as conductivity weighted so that low theta bins do not contribute to the conductivity:
-        Geff,j​=∫θj−1​θj​​K(θ)dθ∫θj−1​θj​​h(θ)K(θ)dθ​
+    -~~Evaluate Geff as conductivity weighted so that low theta bins do not contribute to the conductivity:~~
+        ~~Geff,j​=∫θj−1​θj​​K(θ)dθ∫θj−1​θj​​h(θ)K(θ)dθ​~~
+- Evaluate the pulling and bin activation
+- perform mass balance checks
 - check if ponded infiltration performs well and also that only ponded (no rain) works well
-- compare with (modified) Green-Ampt
+- Check if GA performs well
+- compare with (modified) Green-Ampt 
 - compare with observations
 - add layered soils
 - Think of way to calculate a 'constant' infiltration for a typical shower ( duration 1 hr + 3 hr after)
-- create module to infiltration handler which pulls water from right bins to left if any bin has unsatisfied demand.
+- ~~create module to infiltration handler which pulls water from right bins to left if any bin has unsatisfied demand.~~
 
 ## Long-term ##
 - add falling slugs

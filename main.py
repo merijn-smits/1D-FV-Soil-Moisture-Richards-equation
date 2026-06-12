@@ -1,10 +1,13 @@
+from datetime import datetime
 import funcs
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
 import pandas as pd
-'''
+import logging
+
+
 #Soil params, here Staringreeks B01 (fijn zand) all in [cm/day]
 theta_r = 0.02
 theta_e = 0.427
@@ -24,7 +27,7 @@ labda = 0
 alpha = 0.0205
 
 
-'''
+
 #Soil params, here Staringreeks B10 (lichte klei)
 theta_r = 0.01
 theta_e = 0.448
@@ -35,7 +38,7 @@ labda = 4.581
 alpha = 0.0128
 '''
 
-#test
+#settings
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
 h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
 t_steps = 240
@@ -48,7 +51,19 @@ dt = t_max/t_steps
 print(dt * 60*24 ) # print timestep in minutes
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 bins = funcs.create_bins(N , theta_r, theta_e, labda, alpha,n ,Ks, h_max, h_min, dt)
-#init
+
+#set up message logging
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
+logging.basicConfig (filename = 'messages.log',
+                        filemode = 'w',
+                        encoding = 'utf-8',
+                        format = '{levelname}:{name}:{message}',
+                        style = '{',
+                        level = logging.INFO)
+
+logging.info(f'time = {datetime.now()}')
 
 Hp = 0.0 #initial ponding depth [cm]
 theta_init = 0.1
@@ -74,14 +89,13 @@ z_fronts = funcs.capillary_relax(z_fronts, max_depth)
 '''
 #automatic loop
 for i ,t  in enumerate(time_vec):
+    logging.info(f't = {i}')
     z_fronts, Hp, infiltration = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
                                             alpha, m, n, theta_r, theta_e,
                                             dt, Hp, max_depth, theta_init,N)                                   
     z_fronts = funcs.capillary_relax(z_fronts, max_depth)
     cum_inf[i] = infiltration - z_init
     z_history[i,:] = z_fronts
-    print(f't = {i}')
-
 results_df  = pd.DataFrame(z_history).T
 
 #plot with theta
