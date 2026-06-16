@@ -46,6 +46,7 @@ N = 100
 t_max = 60  *1/24/60 #in [minutes]
 max_depth = 20 #maximum modeling depth in [cm]
 rainfall_rate = 100 #[cm/day]
+cum_rain = t_max * rainfall_rate
 dt = t_max/t_steps
 print(dt * 60*24*60) # print timestep in seconds
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
@@ -63,8 +64,8 @@ logging.basicConfig (filename = 'messages.log',
                         level = logging.INFO)
 logging.info(f'time = {datetime.now()}')
 
-Hp = 0.0 #initial ponding depth [cm]
-theta_init = 0.1
+Hp = 0 #initial ponding depth [cm]
+theta_init = 0.2
 idx = (np.abs(bins['theta_bins'] - theta_init)).argmin()
 z_fronts = np.zeros(N)     # remove +0.01 when infiltration initialisation is added
 z_history = np.zeros((t_steps, N))
@@ -95,6 +96,12 @@ for i ,t  in enumerate(time_vec):
     cum_inf[i] = infiltration - z_init
     z_history[i,:] = z_fronts
 results_df  = pd.DataFrame(z_history).T
+logging.info(f'totale infiltratie = {cum_inf[-1]}')
+
+#calculate the mass balance error
+abs_error = cum_rain - cum_inf[-1] - Hp
+perc_error = abs_error/cum_rain*100
+
 
 #plot with theta
 x_theta = bins["theta_bins"]
@@ -115,7 +122,7 @@ def update(frame):
     ax.set_title(f"Time step {frame + 1} / {z_history.shape[0]}")
     return (line,)
 
-anim = FuncAnimation(fig, update, frames=z_history.shape[0], interval=100, blit=False)
+anim = FuncAnimation(fig, update, frames=z_history.shape[0], interval=50, blit=False)
 
 plt.show()
 
@@ -145,7 +152,6 @@ plt.show()
 
 anim
 
-'''
 # create K(θ) plot
 x = bins["theta_bins"]
 y = (bins["K_bins"])
@@ -157,7 +163,7 @@ ax.set_ylabel("Hydraulic conductivity K")
 ax.set_title("unsaturated hydraulic conductivity")
 plt.show()
 
-'''
+
 
 
 

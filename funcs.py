@@ -10,6 +10,7 @@ Functions to run the 1D finite water content richards by Ogden et al. 2015 and T
     Water Resour. Res., 44, W08453, doi:10.1029/2008WR006815.
 
 '''
+from logging import exception
 import numpy as np
 import logging
 
@@ -185,13 +186,13 @@ def RK4 (z, Geff, MoL, Hp, dt, active = None):
 
 ####### BIN ACTIVATION #####
 '''
-New functions to activate and deactivate bins, depending on rainfall. 
+Functions to activate and deactivate bins, depending on rainfall. 
 Idea: add ponded depth and rainfall together and remove the water needed to satisfy the waterdemand for 
 Theta bins from left to right. If bins do not contain water at the moment, the dry bin depth is used (Talbot and Ogden, 2008)
 Only if all theta bins are filled, water is saved as ponded
 
 Still need to think about how to calculate the head from ponded water. 
-For now just use the ponded depth fromk the previous step and add uninfiltrated water at the end to ponded.
+For now just use the ponded depth from the previous step and add uninfiltrated water at the end to ponded.
 '''
 
 def init_theta_d (bins,theta_init, tol, max_iter,N):
@@ -269,8 +270,8 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     sat_idx = np.where(z_fronts >= max_depth)[0] 
     if len(sat_idx) == 0:
         theta_i = theta_r
-    elif len(sat_idx) == N: # prevent problems when all bins are completetly full
-        theta_i = bins['theta_bins'][np.max(sat_idx)+1]
+    # elif len(sat_idx) == N: # prevent problems when all bins are completetly full
+    #     theta_i = bins['theta_bins'][np.max(sat_idx)]
     else:
         theta_i = bins['theta_bins'][np.max(sat_idx)]
 
@@ -278,20 +279,24 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     # θd is the right most bin containing water 
     # NEW FIX: only count a bins as active if it has a depth higher then its dry_depth instead of 0
     # Nope only a cosmetic fix: bins['dry_depth']
-    active_idx = np.where((z_fronts > bins['dry_depth'] ) & (z_fronts < max_depth))[0]    # get the array of bins that are active
+    active_idx = np.where((z_fronts > bins['dry_depth'] ) & (z_fronts <= max_depth))[0]    # get the array of bins that are active
     #print(f'active bins = {active_idx}')
     if len(active_idx) != 0:
         theta_d = bins['theta_bins'][np.max(active_idx)]
     else:
         theta_d = bins['theta_bins'][np.max(sat_idx)+1]  #FIXLATER + 1 is to regulate initialisation where there are only completely full and empty bins
         active_idx = np.max(sat_idx)+1
-    #print(f'theta_d = {theta_d}')
+    
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
     #this is the same for all bins
-    MoL = ((bins['K_bins'][np.max(active_idx)] - bins['K_bins'][np.max(sat_idx)])
-            /
-           (theta_d - theta_i)).item()
+    try:
+        MoL = ((bins['K_bins'][np.max(active_idx)] - bins['K_bins'][np.max(sat_idx)])
+                /
+            (theta_d - theta_i)).item()
+    except ZeroDivisionError:
+        logging.warning(f'theta_i = {theta_i} = theta_d = {theta_d}, setting MoL to 0')
+        MoL = 0
 
     #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
     # FIXLATER should be dependent on the highest active bin form last iter
@@ -375,8 +380,8 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
            
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
-    infiltration = np.sum(z_new * bins['delta_theta'])
-    logger.info(f'Max bin = {max_bin}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {round(theta_i,2)}, θd = {round(theta_d,2)}, MoL = {round(MoL,2)}')
+    infiltration = np.sum((z_new - z_fronts)  * bins['delta_theta']) #for this timestep
+    logger.info(f'Max bin = {max_bin}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
     return z_new, water_available, infiltration
 
 ##### FALLING SLUGS #####
