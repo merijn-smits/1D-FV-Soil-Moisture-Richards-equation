@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import logging
 
-
 #Soil params, here Staringreeks B01 (fijn zand) all in [cm/day]
 theta_r = 0.02
 theta_e = 0.427
@@ -26,7 +25,6 @@ m = 1-1/n
 labda = 0
 alpha = 0.0205
 
-
 #Soil params, here Staringreeks B10 (lichte klei)
 theta_r = 0.01
 theta_e = 0.448
@@ -35,6 +33,7 @@ n = 1.135
 m = 1-1/n
 labda = 4.581
 alpha = 0.0128
+
 '''
 
 #settings
@@ -43,14 +42,20 @@ h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
 t_steps = 900
 #dt = 1/24/60 #in [minutes]
 N = 100
-t_max = 60  *1/24/60 #in [minutes]
+t_max = 240  *1/24/60 #in [minutes]
 max_depth = 20 #maximum modeling depth in [cm]
-rainfall_rate = 100 #[cm/day]
-cum_rain = t_max * rainfall_rate
 dt = t_max/t_steps
 print(dt * 60*24*60) # print timestep in seconds
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 bins = funcs.create_bins(N , theta_r, theta_e, labda, alpha,n ,Ks, h_max, h_min, dt)
+
+
+#set rainfall
+rainfall_rate = 100 #* 24/10 #[mm/hr] to [cm/day]
+rain_end = 240 * 1/24/60 #[minutes] to [days]
+rain_vec = np.zeros(t_steps)
+rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]] = rainfall_rate
+cum_rain = t_max * rainfall_rate #FIXLATER change to accomodate rain_vec
 
 #set up message logging
 for handler in logging.root.handlers[:]:
@@ -72,7 +77,9 @@ z_history = np.zeros((t_steps, N))
 cum_inf = np.zeros(t_steps)
 z_fronts[:idx] = max_depth #set the bins below theta_init active
 z_init = np.sum(z_fronts * bins['delta_theta'])
-
+max_bin_list = []
+frontspeed_list =[]
+Hp_list = []
 '''
 # one by one manual loop
 z_fronts, Hp, infiltration = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
@@ -87,20 +94,68 @@ z_fronts = funcs.capillary_relax(z_fronts, max_depth)
 '''
 #automatic loop
 for i ,t  in enumerate(time_vec):
-    logging.info(f't = {i}')
-    z_fronts, Hp, infiltration = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
+    logging.info(f't = {i}, rain = {rain_vec[i]}')
+    z_fronts, Hp, infiltration, max_bin, frontspeed = funcs.handle_infiltration (rain_vec[i], bins, z_fronts, 
                                             alpha, m, n, theta_r, theta_e,
                                             dt, Hp, max_depth, theta_init,N)                                   
     z_fronts = funcs.capillary_relax(z_fronts, max_depth)
     logging.info(np.round(z_fronts[95:],3))
-    cum_inf[i] = infiltration - z_init
+    cum_inf[i] = infiltration
+    Hp_list.append(Hp)
+    max_bin_list.append(max_bin)
+    frontspeed_list.append(frontspeed)
     z_history[i,:] = z_fronts
+
 results_df  = pd.DataFrame(z_history).T
+
+
+
+
+
+#### Evaluation of results ####
+eval_df = pd.DataFrame({
+    "max_bin": max_bin_list,
+    "front_speed": frontspeed_list,
+    "Hp": Hp_list,
+    "cum_inf": cum_inf})
+
 logging.info(f'totale infiltratie = {cum_inf[-1]}')
 
 #calculate the mass balance error
 abs_error = cum_rain - cum_inf[-1] - Hp
 perc_error = abs_error/cum_rain*100
+
+#plot some evaluation plots
+fig, ax = plt.subplots()
+l1, = ax.plot(cum_inf, color="tab:blue", label="cum_inf")
+l2, = ax.plot(frontspeed_list, color="tab:green", label="front_speed")
+ax.set_xlabel("Timestep")
+ax.set_ylabel("cum_inf", color="tab:blue")
+ax.tick_params(axis="y", labelcolor="tab:blue")
+ax.set_ylim(0, 0.02)
+
+ax2 = ax.twinx()
+l3, = ax2.plot(Hp_list, color="tab:orange", label="Ponded depth")
+ax2.set_ylabel("Ponded depth", color="tab:orange")
+ax2.tick_params(axis="y", labelcolor="tab:orange")
+#ax2.set_ylim(0,0.1)
+
+
+ax3 = ax.twinx()
+l4, = ax3.plot(max_bin_list, color="tab:purple", label="max_bin_list")
+ax3.set_ylabel("max_bin_list", color="tab:purple")
+ax3.tick_params(axis="y", labelcolor="tab:purple")
+ax3.set_ylim(0, 100)
+# move the third axis to avoid overlap
+ax3.spines["right"].set_position(("outward", 60))
+
+# combined legend
+lines = [l1, l2, l3, l4]
+labels = [ln.get_label() for ln in lines]
+ax.legend(lines, labels)
+
+ax.set_title("Cumulative Infiltration, Front speed, Ponded water, Max bin")
+plt.show()
 
 
 #plot with theta

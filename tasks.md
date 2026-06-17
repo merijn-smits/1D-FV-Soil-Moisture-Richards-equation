@@ -18,12 +18,13 @@
         ~~Geff,j​=∫θj−1​θj​​K(θ)dθ∫θj−1​θj​​h(θ)K(θ)dθ​~~
 - ~~create module to infiltration handler which pulls water from right bins to left if any bin has unsatisfied demand.~~
 - ~~Evaluate the pulling and bin activation~~
-- ~~perform mass balance checks -> mb error<1E-3%~~
-- check infiltration per timestep
-- check if ponded infiltration performs well and also that only ponded (no rain) works well
-- Possibly think of way to calculate a 'constant' infiltration for a typical shower ( duration 1 hr + 3 hr after)
-    - Infiltration after ponding has has infiltrated is not necessary.
-- use actual rainfall and initialize the possibility for non-ponded infiltration
+- ~~perform mass balance checks~~ -> mb error<1E-3%
+- ~~check infiltration per timestep~~ -> checked and graphs created, not fixable short term
+- ~~check if ponded infiltration performs well and also that only ponded (no rain) works well~~ -> works reasonable, but jumps remain
+- ~~Possibly think of way to calculate a 'constant' infiltration for a typical shower ( duration 1 hr + 3 hr after)~~
+    - ~~Infiltration after ponding has has infiltrated is not necessary~~
+- ~~use actual rainfall and initialize the possibility for non-ponded infiltration
+- Evaluate infiltration of fully saturated bins and not fully saturated bins
 
 - clean up 'bins' input
 
@@ -35,6 +36,8 @@
 - 
 
 ## Long-term ##
+- the dips in inifiltration for ponded only
+- evaluate the oscillation in infiltration for rainfall infiltration
 - add falling slugs
 - add layered soils
 - add groundwater module

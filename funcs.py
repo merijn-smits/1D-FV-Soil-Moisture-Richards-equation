@@ -264,6 +264,11 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     
     rain_sum = rainfall_rate* dt 
     water_available = Hp + rain_sum # this thus creates that there is no ponded head effect from rainfall during this timestep
+    
+    '''
+    #now theta_i moves when the front has reached the watertable, increasing MoL massively, which increases front speeds.
+    #this is in principle unrealistic since K and H are single valued and the front is sharp.
+    #therefore keep theta_i = theta_init
 
     # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
     # θi is the left most bin were the water extends form surface to max_depth
@@ -274,19 +279,24 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     #     theta_i = bins['theta_bins'][np.max(sat_idx)]
     else:
         theta_i = bins['theta_bins'][np.max(sat_idx)]
-
+    '''
+    #keep theta_i constant
+    theta_i = theta_init
+    sat_idx = int(np.abs(bins['theta_bins'] - theta_i).argmin())
 
     # θd is the right most bin containing water 
     # NEW FIX: only count a bins as active if it has a depth higher then its dry_depth instead of 0
     # Nope only a cosmetic fix: bins['dry_depth']
-    active_idx = np.where((z_fronts > bins['dry_depth'] ) & (z_fronts <= max_depth))[0]    # get the array of bins that are active
+    #changed back to 0, for increased stability 
+    active_idx = np.where((z_fronts > 0 ) & (z_fronts <= max_depth))[0]    # get the array of bins that are active
     #print(f'active bins = {active_idx}')
     if len(active_idx) != 0:
         theta_d = bins['theta_bins'][np.max(active_idx)]
     else:
+        
         theta_d = bins['theta_bins'][np.max(sat_idx)+1]  #FIXLATER + 1 is to regulate initialisation where there are only completely full and empty bins
         active_idx = np.max(sat_idx)+1
-    
+    max_bin_theta  = np.max(active_idx)
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
     #this is the same for all bins
@@ -376,13 +386,19 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             
             #print(f'last bin used = {j}')
 
-        z_new[j] = np.minimum(z_new[j], max_depth)
+
            
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
     infiltration = np.sum((z_new - z_fronts)  * bins['delta_theta']) #for this timestep
-    logger.info(f'Max bin = {max_bin}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
-    return z_new, water_available, infiltration
+    z_new = np.minimum(z_new, max_depth)
+    try:
+        first_bin = np.min(np.where(z_new< max_depth))
+    except:
+        first_bin = 0
+    front_speed = z_new[first_bin] - z_fronts[first_bin]
+    logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
+    return z_new, water_available, infiltration, max_bin,front_speed
 
 ##### FALLING SLUGS #####
 '''
