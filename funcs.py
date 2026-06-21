@@ -114,7 +114,7 @@ def G_A_dry_depth (alpha, m, n, theta_e, theta_r, Ks, dt, tol = 0.005):
             z_new = z_old - (f / f_prime) # Newton rapson step
         diff = z_old - z_new
         z_old = z_new
-        print(f'diff = {diff}, z_new = {z_new}')
+        #print(f'diff = {diff}, z_new = {z_new}')
     return z_new * 10 #from c code, then why use this function at all, it does not limit anything yet
 
 def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol = 0.005):
@@ -265,11 +265,12 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     rain_sum = rainfall_rate* dt 
     water_available = Hp + rain_sum # this thus creates that there is no ponded head effect from rainfall during this timestep
     
-    '''
+    
     #now theta_i moves when the front has reached the watertable, increasing MoL massively, which increases front speeds.
     #this is in principle unrealistic since K and H are single valued and the front is sharp.
     #therefore keep theta_i = theta_init
 
+    
     # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
     # θi is the left most bin were the water extends form surface to max_depth
     sat_idx = np.where(z_fronts >= max_depth)[0] 
@@ -283,6 +284,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     #keep theta_i constant
     theta_i = theta_init
     sat_idx = int(np.abs(bins['theta_bins'] - theta_i).argmin())
+    '''
 
     # θd is the right most bin containing water 
     # NEW FIX: only count a bins as active if it has a depth higher then its dry_depth instead of 0
@@ -330,12 +332,21 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     '''
     # in C-code infiltration into fully saturated bins and infiltration intoinfiltration fronts
     # is split into two separate funcs, why? and is that needed?
-    for j in range(len(z_fronts)):
-        #first calculate the potential infiltration rate 
-        if z_fronts[j] >= max_depth:
-            dz = K_bins[j] *dt/delta_theta #this is saturated infiltration for bins touching GW [cm]
-            #print(f'bin {j} saturated')
-        elif z_fronts[j] > 0:
+    
+    # NEW: Separate calculation of infiltration of fully saturated bins
+    #  calculate the highest bin that is fully saturated
+    max_sat_idx = max(np.where(z_fronts >= max_depth)[0] )
+    #  calculate the demand
+    sat_inf = K_bins[max_sat_idx] * (1 + Hp/max_depth) *dt #this is saturated infiltration for bins touching GW [cm]
+    # caluclate left over water for unsat bins
+    water_available -= sat_inf
+    max_bin = max_sat_idx # for printing if all bins are full
+    logger.info(f'max sat = {max_sat_idx}, sat_inf = {sat_inf}')
+
+
+    for j in range(max_sat_idx + 1, len(z_fronts)):
+
+        if z_fronts[j] > 0:
             dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
             #print(f'bin {j} already active')
         else:
@@ -354,8 +365,8 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
             #print(f'demand = {demand}, water available = {water_available}')
             z_new[j] += water_available / delta_theta
             dz = demand / delta_theta - water_available / delta_theta #leftover demand for unsatisfied bins
-            if water_available > 0:
-                logger.info(f'no more water avalable for bin {j}, left over dz = {round(dz,2)}')
+            # if water_available > 0:
+                #logger.info(f'no more water avalable for bin {j}, left over dz = {round(dz,2)}')
             water_available = 0
             #print(f'no more water avalable for bin {j}, left over dz = {dz}')
            
@@ -368,17 +379,17 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
                     z_new[j] += dz 
                     z_new[last_non_zero] -= dz
                     dz = 0
-                    logger.info(f'full demand of bin {j} satisfied by bin {last_non_zero}')
+                    #logger.info(f'full demand of bin {j} satisfied by bin {last_non_zero}')
                      # to ensure the left over water in the current max bin is also emptied in other bins
                 elif(z_new[last_non_zero]>0):
                     #if water needs to be taken from more than 1 bin
                     z_new[j] += z_new[last_non_zero]
                     dz -= z_new[last_non_zero]
                     z_new[last_non_zero]=0
-                    logger.info(f'all water from {last_non_zero} to {j}, demand not satisfied')
+                    #logger.info(f'all water from {last_non_zero} to {j}, demand not satisfied')
                     last_non_zero -= 1
-                else:
-                    logger.info(f'no water left in bin {last_non_zero}, proceeding')
+                #else:
+                    #logger.info(f'no water left in bin {last_non_zero}, proceeding')
                 #print(f'last_non_zero = {last_non_zero}, j = {j}')
             if z_new[j]>0:
                 max_bin = j
@@ -390,14 +401,14 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
            
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
-    infiltration = np.sum((z_new - z_fronts)  * bins['delta_theta']) #for this timestep
+    infiltration = sat_inf + np.sum((z_new - z_fronts)  * bins['delta_theta']) #for this timestep
     z_new = np.minimum(z_new, max_depth)
     try:
         first_bin = np.min(np.where(z_new< max_depth))
     except:
         first_bin = 0
     front_speed = z_new[first_bin] - z_fronts[first_bin]
-    logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
+    #logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
     return z_new, water_available, infiltration, max_bin,front_speed
 
 ##### FALLING SLUGS #####
