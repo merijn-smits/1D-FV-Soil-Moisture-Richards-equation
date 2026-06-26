@@ -1,3 +1,4 @@
+from funcs import theta_h
 from datetime import datetime
 import funcs
 import plotting 
@@ -23,8 +24,8 @@ logging.info(f'time = {datetime.now()}')
 ##SETTINGS##
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
 h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
-max_depth = 20 #maximum modeling depth in [cm]
-theta_init = 0.2 #Initial soilmoisture content FIXLATER: change to h
+max_depth = 100 #maximum modeling depth in [cm]
+h_init = 1000
 t_steps = 900
 N = 100
 t_max = 240  *1/24/60 #in [minutes]
@@ -32,8 +33,8 @@ dt = t_max/t_steps
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 
 ##RAINFALL SETTINGS###
-rainfall_rate = 20 * 24/10 #[mm/hr] to [cm/day]
-rain_end = 60 * 1/24/60 #[minutes] to [days]
+rainfall_rate = 50 * 24/10 #[mm/hr] to [cm/day]
+rain_end = 240 * 1/24/60 #[minutes] to [days]
 rain_vec = np.zeros(t_steps)
 rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]] = rainfall_rate
 cum_rain = t_max * rainfall_rate #FIXLATER change to accomodate rain_vec
@@ -53,21 +54,23 @@ soil_code = np.array(staring['unit'])
 mean_inf = np.zeros(len(soil_code))
 
 for j in range(len(staring)):
-
+    print(f'soil is {j+1}')
     #Create the bins
     bins = funcs.create_bins(N , theta_r[j], theta_e[j], labda[j], alpha[j],n[j] ,Ks[j], h_max, h_min, dt)
 
     #Set initial values
     Hp = 0 #initial ponding depth [cm]
+    theta_init = max(bins['theta_bins'][1],funcs.theta_h(h_init,theta_r[j],theta_e[j], alpha[j], m[j], n[j])) #force the first bin to be full of water
     idx = (np.abs(bins['theta_bins'] - theta_init)).argmin()
     z_fronts = np.zeros(N)     
     z_history = np.zeros((t_steps, N))
-    cum_inf = np.zeros(t_steps)
     z_fronts[:idx] = max_depth #set the bins below theta_init to fully saturated
     z_init = np.sum(z_fronts * bins['delta_theta'])
-    max_bin_list = []
-    frontspeed_list =[]
-    Hp_list = []
+    inf_mm_day = np.zeros(t_steps)
+    max_bin_list = np.zeros(t_steps)
+    frontspeed_list = np.zeros(t_steps)
+    Hp_list = np.zeros(t_steps)
+    
 
     #Timeloop
     for i ,t  in enumerate(time_vec):
@@ -77,26 +80,30 @@ for j in range(len(staring)):
                                                 dt, Hp, max_depth, theta_init,N)                                   
         z_fronts = funcs.capillary_relax(z_fronts, max_depth)
         logging.info(np.round(z_fronts[95:],3))
-        cum_inf[i] = infiltration
-        Hp_list.append(Hp)
-        max_bin_list.append(max_bin)
-        frontspeed_list.append(frontspeed)
+        inf_mm_day[i] = infiltration/dt*10
+        Hp_list[i] = Hp
+        max_bin_list[i] = max_bin
+        frontspeed_list[i] = frontspeed
         z_history[i,:] = z_fronts
-        logging.info(f'cum_inf = {cum_inf[i]}')
+        logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
 
-    mean_inf[j] = sum(cum_inf)
+    #calculate the total infiltration [cm]
+    mean_inf[j] = np.mean(inf_mm_day)
     #results_df  = pd.DataFrame(z_history).T
 
 #Merge results with Bofek data and write to file
 results = pd.DataFrame({
     'soil_code' : soil_code,
-    'infiltration_sum' : mean_inf    
+    'infiltration_FVR' : mean_inf    
     })
+
 
 bofek = pd.read_csv('bofek.csv')[['bodemcode','isoil1']]
 bofek_new = pd.merge(bofek, results, left_on = 'isoil1', right_on = 'soil_code').drop(columns= ['soil_code', 'isoil1'])
-bofek_new.to_csv('Inf_bui8_theta0.2.csv', sep = ',')
+bofek_new.to_csv(f'./results/Inf_{round(rainfall_rate)}mm_h_{h_init}_z_{round(max_depth)}.csv', sep = ',')
 
+
+'''
 #### Evaluation of results ####
 eval_df = pd.DataFrame({
     "max_bin": max_bin_list,
@@ -142,7 +149,7 @@ anim
 
 
 #### left over ####
-'''
+
 #Plot with bin index
 x_bins = np.arange(z_history.shape[1])
 fig, ax = plt.subplots(figsize=(8, 5))

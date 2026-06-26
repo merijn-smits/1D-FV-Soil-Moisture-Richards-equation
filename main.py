@@ -44,16 +44,15 @@ t_steps = 900
 #dt = 1/24/60 #in [minutes]
 N = 100
 t_max = 240  *1/24/60 #in [minutes]
-max_depth = 20 #maximum modeling depth in [cm]
+max_depth = 100 #maximum modeling depth in [cm]
 dt = t_max/t_steps
 print(dt * 60*24*60) # print timestep in seconds
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 bins = funcs.create_bins(N , theta_r, theta_e, labda, alpha,n ,Ks, h_max, h_min, dt)
 
-
 #set rainfall
-rainfall_rate = 20 * 24/10 #[mm/hr] to [cm/day]
-rain_end = 60 * 1/24/60 #[minutes] to [days]
+rainfall_rate = 40 * 24/10 #[mm/hr] to [cm/day]
+rain_end = 240 * 1/24/60 #[minutes] to [days]
 rain_vec = np.zeros(t_steps)
 rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]] = rainfall_rate
 cum_rain = t_max * rainfall_rate #FIXLATER change to accomodate rain_vec
@@ -71,16 +70,19 @@ logging.basicConfig (filename = 'messages.log',
 logging.info(f'time = {datetime.now()}')
 
 Hp = 0 #initial ponding depth [cm]
-theta_init = 0.2
+h_init = 1000
+theta_init = max(bins['theta_bins'][0],funcs.theta_h(h_init, theta_r, theta_e, alpha, m, n)) #force at least one bin to be filled for very sharp h(θ) curves
 idx = (np.abs(bins['theta_bins'] - theta_init)).argmin()
 z_fronts = np.zeros(N)     # remove +0.01 when infiltration initialisation is added
 z_history = np.zeros((t_steps, N))
 cum_inf = np.zeros(t_steps)
 z_fronts[:idx] = max_depth #set the bins below theta_init active
 z_init = np.sum(z_fronts * bins['delta_theta'])
-max_bin_list = []
-frontspeed_list =[]
-Hp_list = []
+inf_mm_day = np.zeros(t_steps)
+max_bin_list = np.zeros(t_steps)
+frontspeed_list =np.zeros(t_steps)
+Hp_list = np.zeros(t_steps)
+
 '''
 # one by one manual loop
 z_fronts, Hp, infiltration = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
@@ -102,11 +104,11 @@ for i ,t  in enumerate(time_vec):
     z_fronts = funcs.capillary_relax(z_fronts, max_depth)
     logging.info(np.round(z_fronts[95:],3))
     cum_inf[i] = infiltration
-    Hp_list.append(Hp)
-    max_bin_list.append(max_bin)
-    frontspeed_list.append(frontspeed)
+    inf_mm_day[i] = infiltration/dt*10
+    Hp_list[i] = Hp
+    max_bin_list[i] = max_bin
+    frontspeed_list[i] = frontspeed
     z_history[i,:] = z_fronts
-    logging.info(f'cum_inf = {cum_inf[i]}')
 
 results_df  = pd.DataFrame(z_history).T
 
@@ -117,7 +119,7 @@ eval_df = pd.DataFrame({
     "max_bin": max_bin_list,
     "front_speed": frontspeed_list,
     "Hp": Hp_list,
-    "cum_inf": cum_inf})
+    "inf_rate (mm/day)": inf_mm_day})
 
 summed_inf = sum(cum_inf)
 logging.info(f'Cumulative infiltration = {summed_inf}')
@@ -127,11 +129,10 @@ abs_error = cum_rain - cum_inf[-1] - Hp
 perc_error = abs_error/cum_rain*100
 
 #Create eval plots
-fig, axes = plotting.plot_evaluation(cum_inf, frontspeed_list, Hp_list, max_bin_list)
-plt.show()
+fig, axes = plotting.plot_evaluation(inf_mm_day, frontspeed_list, Hp_list, max_bin_list)
 
 
-#plot with theta
+##ANIMATION PLOTS##
 x_theta = bins["theta_bins"]
 
 fig, ax = plt.subplots(figsize=(8, 5))
@@ -147,7 +148,7 @@ ax.set_ylim(z_history.max() * 1.05, z_history.min() * 0.95)
 def update(frame):
     line.set_xdata(x_theta)
     line.set_ydata(z_history[frame])
-    ax.set_title(f"Time step {frame + 1} / {z_history.shape[0]}")
+    ax.set_title(f"Time step {frame + 1} / {z_history.shape[0]}, Hp = {Hp_list[frame]:.3f} ")
     return (line,)
 
 anim = FuncAnimation(fig, update, frames=z_history.shape[0], interval=50, blit=False)

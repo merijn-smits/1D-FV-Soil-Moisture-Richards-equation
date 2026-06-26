@@ -169,7 +169,7 @@ def RK4 (z, Geff, MoL, Hp, dt, active = None):
 
     # calculate for each front infiltration velocity Ogden eq 18   
     def rhs(z):
-        dz = MoL * (1 + (Geff + Hp)/z)
+        dz = MoL * (1 + (Geff )/z) # add +Hp to Geff for ponded depth
         return dz
 
     # Calculate the Runge-Kutta steps
@@ -250,6 +250,7 @@ def effective_cap_drive (alpha, m, theta_d, theta_r, theta_e, n):
     '''
     HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
     psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
+    logging.info(f'HcM = {HcM}, psi_d = {psi_d}')
     return max(HcM, psi_d)
 
 
@@ -295,7 +296,6 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     if len(active_idx) != 0:
         theta_d = bins['theta_bins'][np.max(active_idx)]
     else:
-        
         theta_d = bins['theta_bins'][np.max(sat_idx)+1]  #FIXLATER + 1 is to regulate initialisation where there are only completely full and empty bins
         active_idx = np.max(sat_idx)+1
     max_bin_theta  = np.max(active_idx)
@@ -331,17 +331,17 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
 
     '''
     # in C-code infiltration into fully saturated bins and infiltration intoinfiltration fronts
-    # is split into two separate funcs, why? and is that needed?
+    # is split into two separate funcs, why? and is that needed?(yes)
     
     # NEW: Separate calculation of infiltration of fully saturated bins
     #  calculate the highest bin that is fully saturated
     max_sat_idx = max(np.where(z_fronts >= max_depth)[0] )
     #  calculate the demand
-    sat_inf = K_bins[max_sat_idx] * (1 + Hp/max_depth) *dt #this is saturated infiltration for bins touching GW [cm]
+    sat_inf = K_bins[max_sat_idx] * (1) *dt #this is saturated infiltration for bins touching GW [cm] # add + Hp/max_depth to add extra head due to ponding
     # caluclate left over water for unsat bins
     water_available -= sat_inf
     max_bin = max_sat_idx # for printing if all bins are full
-    logger.info(f'max sat = {max_sat_idx}, sat_inf = {sat_inf}')
+    logger.info(f'max sat = {max_sat_idx}, sat_inf = {sat_inf}, k_sat = {K_bins[max_sat_idx]}')
 
 
     for j in range(max_sat_idx + 1, len(z_fronts)):
@@ -401,7 +401,9 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
            
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
-    infiltration = sat_inf + np.sum((z_new - z_fronts)  * bins['delta_theta']) #for this timestep
+    front_inf = np.sum((z_new - z_fronts)  * bins['delta_theta'])
+    infiltration = (sat_inf + front_inf) #infiltration in mm/day at this time step
+    logger.info(f'sat_inf = {sat_inf}, front_inf = {front_inf}, cum_inf = {infiltration}')
     z_new = np.minimum(z_new, max_depth)
     try:
         first_bin = np.min(np.where(z_new< max_depth))
