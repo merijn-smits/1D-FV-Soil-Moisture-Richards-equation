@@ -28,13 +28,13 @@ max_depth = 100 #maximum modeling depth in [cm]
 h_init = 1000
 t_steps = 900
 N = 100
-t_max = 240  *1/24/60 #in [minutes]
+t_max = 480  *1/24/60 #in [minutes]
 dt = t_max/t_steps
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 
 ##RAINFALL SETTINGS###
 rainfall_rate = 50 * 24/10 #[mm/hr] to [cm/day]
-rain_end = 240 * 1/24/60 #[minutes] to [days]
+rain_end = 480 * 1/24/60 #[minutes] to [days]
 rain_vec = np.zeros(t_steps)
 rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]] = rainfall_rate
 cum_rain = t_max * rainfall_rate #FIXLATER change to accomodate rain_vec
@@ -52,6 +52,7 @@ alpha = np.array(staring['alpha'])
 ##INITIALISE RESULTS##
 soil_code = np.array(staring['unit'])
 mean_inf = np.zeros(len(soil_code))
+infiltration_list = []
 
 for j in range(len(staring)):
     print(f'soil is {j+1}')
@@ -89,6 +90,7 @@ for j in range(len(staring)):
 
     #calculate the total infiltration [cm]
     mean_inf[j] = np.mean(inf_mm_day)
+    infiltration_list.append(inf_mm_day)
     #results_df  = pd.DataFrame(z_history).T
 
 #Merge results with Bofek data and write to file
@@ -96,6 +98,11 @@ results = pd.DataFrame({
     'soil_code' : soil_code,
     'infiltration_FVR' : mean_inf    
     })
+
+infiltration = round(pd.DataFrame(infiltration_list).T,1)
+infiltration.rename(columns= lambda x: x+1,inplace = True)
+infiltration.insert(0, 'time_days',time_vec*t_max)
+infiltration.to_csv('./results/FVR_infiltration.csv')
 
 
 bofek = pd.read_csv('bofek.csv')[['bodemcode','isoil1']]

@@ -26,15 +26,15 @@
 - ~~use actual rainfall and initialize the possibility for non-ponded infiltration~~
 - ~~Evaluate infiltration of fully saturated bins and not fully saturated bins~~ -> still a weird jump present when switchting from fronts to saturated infiltration
 
-- Integrate full staringreeks
+- ~~Integrate full staringreeks~~
 
-- compare with (modified) Green-Ampt 
+- ~~compare with (modified) Green-Ampt ~~
 - compare with observations
 
 - 
 
 ## Long-term ##
-- make theta_init dependent on the soil
+- ~~make theta_init dependent on the soil~~
 - the dips in inifiltration for ponded only
 - clean up 'bins' input
 - evaluate the oscillation in infiltration for rainfall infiltration
