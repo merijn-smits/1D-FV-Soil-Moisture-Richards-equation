@@ -9,6 +9,8 @@ Functions to run the 1D finite water content richards by Ogden et al. 2015 and T
     A method for computing infiltration and redistribution in a discretized moisture content domain, 
     Water Resour. Res., 44, W08453, doi:10.1029/2008WR006815.
 
+    copy from original funcs.py, but adapted to accomodate layered soils. 
+
 '''
 from logging import exception
 import numpy as np
@@ -70,7 +72,11 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
     h_bins = np.minimum(h_bins, h_max)
     h_bins = np.maximum(h_bins, h_min)
     
-    bins = {
+    bins = {'alpha'      : alpha,
+            'theta_r'    : theta_r,
+            'theta_e'    : theta_e,
+            'n'          : n,
+            'm'          : 1-1/n,
             'delta_theta': delta_th,
             'theta_bins' : theta_bins,
             'K_bins'     : K_bins,
@@ -155,6 +161,55 @@ def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol =
         dry_depth[j] = z_new
         bins['dry_depth'] = dry_depth #FIXED cap relax is already taken care of later.
     return bins
+
+def build_layers_by_soil(bofek, soils,h_i):
+    """
+    Parse bofek.csv into a layers_by_soil dict for use in infiltration_layered().
+
+    Each profile (row) has up to 9 layers defined by paired columns:
+        isoilN  — soil type ID (references hydraulic property database)
+        izN     — bottom depth of layer N [cm]
+
+    Inactive layer slots are marked by isoil=0 and iz=99999 and are dropped.
+
+    Duplicate bodemcode entries: first occurrence is kept 
+
+    """
+    
+
+    # Strip whitespace from bodemcode
+    bofek['bodemcode'] = bofek['bodemcode'].str.strip()
+
+    # Identify paired layer columns
+    n_layers = 9
+    isoil_cols = [f'isoil{i}' for i in range(1, n_layers + 1)]
+    iz_cols    = [f'iz{i}'    for i in range(1, n_layers + 1)]
+
+    # Keep first occurrence for duplicate bodemcodes
+    bofek = bofek.drop_duplicates(subset='bodemcode')
+
+    layers_by_soil = {}
+
+    for _, row in bofek.iterrows():
+        name   = row['bodemcode']
+        layers = []
+
+        for isoil_col, iz_col in zip(isoil_cols, iz_cols):
+            isoil = int(row[isoil_col])
+            depth = float(row[iz_col])
+
+            # remove the no_value 
+            if isoil == 0 or depth == 99999:
+                break
+
+            layers.append({
+                **soils[isoil],
+                'depth':   depth
+                })
+
+        layers_by_soil[name] = layers
+
+    return layers_by_soil
 
 
 ######## INFILTRATION FUNCTIONS #####
@@ -263,7 +318,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     else:
         theta_d = bins['theta_bins'][np.max(sat_idx)+1]  #FIXLATER + 1 is to regulate initialisation where there are only completely full and empty bins
         active_idx = np.max(sat_idx)+1
-    max_bin_theta  = np.max(active_idx)
+    #max_bin_theta  = np.max(active_idx)
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
     #this is the same for all bins

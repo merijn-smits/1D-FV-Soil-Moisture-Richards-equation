@@ -1,8 +1,11 @@
-from numpy import datetime_as_string
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
+'''
+This script loads both the Modofied green ampt and Finite volume richards infiltration rates\
+and plots them in a graph 
+'''
 MGA = pd.read_csv('staring_MGA_120mm_h1000_4hr.csv').iloc[:,1:]
 FVR = pd.read_csv('staring_FVR_120mm_h1000_4hr.csv').iloc[:,1:]
 

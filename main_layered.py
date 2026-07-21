@@ -1,16 +1,13 @@
-from funcs import theta_h
 from datetime import datetime
-import funcs
-import plotting 
+import funcs_layered as funcs
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-import matplotlib.pyplot as plt
 import pandas as pd
 import logging
 
 '''
-the original main function, but lopped over all soils of the staring reeks
+the the main.loopred function, but adapted to accomodate layered soils from the bofek
 '''
 
 #set up message logging
@@ -53,15 +50,32 @@ m = 1-1/n
 labda = np.array(staring['lambda'])
 alpha = np.array(staring['alpha'])
 
-##INITIALISE RESULTS##
+##INITIALISE BINS##
+'''
+Create a dict of dicts with all soil properties per staringreeks. 
+This dict is used in the infiltration handelr to look up the soil properties each timestep.
+'''
+soils = {}
+
+for i, name in enumerate(staring['unit']):
+    print(f'soil is {i+1}')
+    #Create the bins
+    bins = funcs.create_bins(N , theta_r[i], theta_e[i], labda[i], alpha[i],n[i] ,Ks[i], h_max, h_min, dt)
+    bins = {'soil': name, **bins}
+    soils[name] = bins
+
+##INTIALISE PROFILES##
+bofek = pd.read_csv('bofek.csv')
+profiles = funcs.build_layers_by_soil(bofek, soils, h_init)
+
+
+##INTIALISE RESULTS##
+
 soil_code = np.array(staring['unit'])
 mean_inf = np.zeros(len(soil_code))
 infiltration_list = []
 
 for j in range(len(staring)):
-    print(f'soil is {j+1}')
-    #Create the bins
-    bins = funcs.create_bins(N , theta_r[j], theta_e[j], labda[j], alpha[j],n[j] ,Ks[j], h_max, h_min, dt)
 
     #Set initial values
     Hp = 0 #initial ponding depth [cm]

@@ -30,8 +30,8 @@
 
 - ~~compare with (modified) Green-Ampt ~~
 - compare with observations
+- add layered soils
 
-- 
 
 ## Long-term ##
 - ~~make theta_init dependent on the soil~~
@@ -41,6 +41,5 @@
 - add falling slugs
 - add layered soils
 - add groundwater module
-- add layered soils
 - improve speed by changing for loops to arrays/masks
 

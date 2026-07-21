@@ -3,6 +3,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
+'''
+This script fits the infiltration curves of e.g. the Modified green ampt equation and the Finite volume richards equation
+to the horton curves. It returns a plot which visualises how the best fitting horton plot looks compared to the original infiltration curves, and it returns a csv with the horton paramter values.
+'''
+
+
 df = pd.read_csv('./results/FVR_infiltration.csv')
 ###HORTON PARAMETER FITTING###
 
