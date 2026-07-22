@@ -25,8 +25,11 @@ logging.info(f'time = {datetime.now()}')
 ##SETTINGS##
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
 h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
-max_depth = 100 #maximum modeling depth in [cm]
-h_init = 1000
+max_depth = 120 #maximum modeling depth in [cm]
+
+# here theta_init is used instead of h_init. h_init would make more sense physically, but the model requires an homogeneous inital soil moisture distribution because fronts cannot merge (yet)
+theta_init = 0.2
+
 t_steps = 900
 N = 100
 t_max = 480  *1/24/60 #in [minutes]
@@ -61,12 +64,15 @@ for i, name in enumerate(staring['unit']):
     print(f'soil is {i+1}')
     #Create the bins
     bins = funcs.create_bins(N , theta_r[i], theta_e[i], labda[i], alpha[i],n[i] ,Ks[i], h_max, h_min, dt)
-    bins = {'soil': name, **bins}
+    bins = {
+        'soil': name, 
+        **bins
+        }
     soils[name] = bins
 
 ##INTIALISE PROFILES##
 bofek = pd.read_csv('bofek.csv')
-profiles = funcs.build_layers_by_soil(bofek, soils, h_init)
+profiles = funcs.build_layers_by_soil(bofek, soils)
 
 
 ##INTIALISE RESULTS##
@@ -75,15 +81,20 @@ soil_code = np.array(staring['unit'])
 mean_inf = np.zeros(len(soil_code))
 infiltration_list = []
 
-for j in range(len(staring)):
+for j, soil in enumerate(profiles):
 
     #Set initial values
     Hp = 0 #initial ponding depth [cm]
-    theta_init = max(bins['theta_bins'][1],funcs.theta_h(h_init,theta_r[j],theta_e[j], alpha[j], m[j], n[j])) #force the first bin to be full of water
-    idx = (np.abs(bins['theta_bins'] - theta_init)).argmin()
     z_fronts = np.zeros(N)     
     z_history = np.zeros((t_steps, N))
-    z_fronts[:idx] = max_depth #set the bins below theta_init to fully saturated
+
+    #set the bins below theta_init to fully saturated. 
+    #Again, because merging of fronts is not possible, the initial theta is the same over the enitre depth profile.
+    #Here the theta_bins of the top layer are used to define which bins are active at the start
+    idx = (np.abs(bins['theta_bins'] - theta_init)).argmin()
+    z_fronts[:idx] = max_depth
+
+    #calculate the initial amount of water in all bins
     z_init = np.sum(z_fronts * bins['delta_theta'])
     inf_mm_day = np.zeros(t_steps)
     max_bin_list = np.zeros(t_steps)

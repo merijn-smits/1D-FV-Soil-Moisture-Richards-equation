@@ -57,7 +57,7 @@ def h_theta (theta, theta_r, theta_e, alpha, m, n):
 
 ######## BIN DISCRETIZATION ######
 
-def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol = 0.0005):
+def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, h_init, dt, tol = 0.0005):
     '''
     create finite volume soil moisture bins with unique hydraulic properties
     '''
@@ -80,7 +80,7 @@ def create_bins (N, theta_r, theta_e, labda, alpha, n, Ks, h_max, h_min, dt, tol
             'delta_theta': delta_th,
             'theta_bins' : theta_bins,
             'K_bins'     : K_bins,
-            'h_bins'     : h_bins,
+            'h_bins'     : h_bins
         }
 
     '''
@@ -162,7 +162,7 @@ def T_O_dry_depth (bins, dt, minimum_dry_depth, GA_depth, iter_lim = 1000, tol =
         bins['dry_depth'] = dry_depth #FIXED cap relax is already taken care of later.
     return bins
 
-def build_layers_by_soil(bofek, soils,h_i):
+def build_layers_by_soil(bofek, soils):
     """
     Parse bofek.csv into a layers_by_soil dict for use in infiltration_layered().
 
@@ -238,7 +238,27 @@ def RK4 (z, Geff, MoL, Hp, dt, active = None):
     dz = (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
     return np.maximum(dz, 0.0)   # fronts only go down
 
+def harmonic_mean_K(z, soil, active_idx):
+    '''
+    calculate the harmonic mean Ks over all layers above current front depth
+    '''
+    
+    total_depth = 0.0
+    resistance  = 0.0         # sum of d_i / Ks_i
+    z_top       = 0.0
 
+    for layer in soil:
+        z_bot     = min(layer['depth'], z)
+        thickness = z_bot - z_top
+        if thickness <= 0:
+            break
+        total_depth += thickness
+        resistance  += thickness / layer['K_bins'][active_idx]
+        z_top        = z_bot
+        if z_bot >= z:
+            break
+
+    return total_depth / resistance if resistance > 0 else soil[0]['K_bins'][active_idx]
 
 ####### BIN ACTIVATION #####
 '''
@@ -320,27 +340,6 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
         active_idx = np.max(sat_idx)+1
     #max_bin_theta  = np.max(active_idx)
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
-    #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
-    #this is the same for all bins
-    try:
-        MoL = ((bins['K_bins'][np.max(active_idx)] - bins['K_bins'][np.max(sat_idx)])
-                /
-            (theta_d - theta_i)).item()
-    except ZeroDivisionError:
-        logging.warning(f'theta_i = {theta_i} = theta_d = {theta_d}, setting MoL to 0')
-        MoL = 0
-
-    #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
-    # FIXLATER should be dependent on the highest active bin form last iter
-    Geff = effective_cap_drive(alpha, m, theta_d, theta_r, theta_e, n)
-    '''
-    print(
-            f"theta_i={theta_i}",
-            f"theta_d={theta_d}",
-            f"MoL={MoL}",
-            f"Geff={Geff}"
-        )
-    '''
 
     z_new = np.copy(z_fronts)
     K_bins = bins['K_bins']
@@ -350,9 +349,6 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     calculate the increase in front depth (dz) according to Ogden 2015 par. 3.7 and Eq 18
 
     '''
-    # in C-code infiltration into fully saturated bins and infiltration intoinfiltration fronts
-    # is split into two separate funcs, why? and is that needed?(yes)
-    
     # NEW: Separate calculation of infiltration of fully saturated bins
     #  calculate the highest bin that is fully saturated
     max_sat_idx = max(np.where(z_fronts >= max_depth)[0] )
@@ -365,6 +361,31 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
 
 
     for j in range(max_sat_idx + 1, len(z_fronts)):
+
+        #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
+        #This varies per bin since K and Δθ may be different since bin fronts may be in differnt soil layer.
+        #Here the Van Genuchten relationships for calculating MoL of the current soil layer are used. 
+        #for simplicity, the front speed is still assumed uniform, while in reality this may not the case since fronts in higher bins may still be in another layer. 
+        try:
+            MoL = ((bins['K_bins'][np.max(active_idx)] - bins['K_bins'][np.max(sat_idx)])
+                    /
+                (theta_d - theta_i)).item()
+        except ZeroDivisionError:
+            logging.warning(f'theta_i = {theta_i} = theta_d = {theta_d}, setting MoL to 0')
+            MoL = 0
+
+        #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
+        # FIXLATER should be dependent on the highest active bin form last iter
+        Geff = effective_cap_drive(alpha, m, theta_d, theta_r, theta_e, n)
+        '''
+        print(
+                f"theta_i={theta_i}",
+                f"theta_d={theta_d}",
+                f"MoL={MoL}",
+                f"Geff={Geff}"
+            )
+        '''
+
 
         if z_fronts[j] > 0:
             dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
