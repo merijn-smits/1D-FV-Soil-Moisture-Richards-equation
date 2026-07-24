@@ -94,13 +94,14 @@ for j, profile in enumerate(profiles):
     Hp_list = np.zeros(t_steps)
     exfil_vol_list = np.zeros(t_steps)
     exfil_psi_list = np.zeros(t_steps)
+    z_total_list = np.zeros((t_steps,N))
 
     
 
     #Timeloop
     for i ,t  in enumerate(time_vec):
         logging.info(f't = {i}, rain = {rain_vec[i]}')
-        z_fronts, Hp, infiltration, max_bin, frontspeed, exfil_vol = funcs.handle_infiltration (rain_vec[i], profiles[profile][0], z_fronts, dt, Hp, N)                                   
+        z_fronts, z_total, Hp, infiltration, max_bin, frontspeed, exfil_vol = funcs.handle_infiltration (rain_vec[i], profiles[profile][0], z_fronts, dt, Hp, N)                                   
         z_fronts = funcs.capillary_relax(z_fronts, max_depth)
         logging.info(np.round(z_fronts[95:],3))
         inf_mm_day[i] = infiltration/dt*10
@@ -108,6 +109,8 @@ for j, profile in enumerate(profiles):
         max_bin_list[i] = max_bin
         frontspeed_list[i] = frontspeed
         z_history[i,:] = z_fronts
+        exfil_vol_list[i] = exfil_vol
+        z_total_list[i,:] = z_total
         logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
 
     #calculate the total infiltration [cm]

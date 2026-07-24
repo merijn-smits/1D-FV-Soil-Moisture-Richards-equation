@@ -425,7 +425,7 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp, N):
     logger.info(f'sat_inf = {sat_inf}, front_inf = {front_inf}, cum_inf = {infiltration}')
     
     #Track the amount of water leaving the layer and set z_new to the maximum depth of the layer
-    z_total = z_new
+    z_total = z_new.copy()
     z_new = np.minimum(z_new, soil['thickness'])
     exfil_array = (z_total-z_new) * delta_theta
     exfil_vol = np.sum(exfil_array)
@@ -437,7 +437,7 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp, N):
         first_bin = 0
     front_speed = z_new[first_bin] - z_fronts[first_bin]
     #logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
-    return z_new, water_available, infiltration, max_bin,front_speed, exfil_vol
+    return z_new, z_total, water_available, infiltration, max_bin,front_speed, exfil_vol
 
 #def layered_soil_handler():
 
