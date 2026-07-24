@@ -76,12 +76,12 @@ profiles = funcs.build_layers_by_soil(bofek, soils)
 ##INTIALISE RESULTS##
 
 soil_code = np.array(staring['unit'])
-mean_inf = np.zeros(len(soil_code))
+mean_inf = np.zeros(len(profiles))
 infiltration_list = []
-limit = 0
 
 for j, profile in enumerate(profiles):
-    
+    if profile != 'EZ50A':
+        continue
     #Set initial values
     Hp = 0 #initial ponding depth [cm]
     z_fronts = np.zeros(N)     
@@ -92,12 +92,15 @@ for j, profile in enumerate(profiles):
     max_bin_list = np.zeros(t_steps)
     frontspeed_list = np.zeros(t_steps)
     Hp_list = np.zeros(t_steps)
+    exfil_vol_list = np.zeros(t_steps)
+    exfil_psi_list = np.zeros(t_steps)
+
     
 
     #Timeloop
     for i ,t  in enumerate(time_vec):
         logging.info(f't = {i}, rain = {rain_vec[i]}')
-        z_fronts, Hp, infiltration, max_bin, frontspeed = funcs.handle_infiltration (rain_vec[i], profiles[profile], z_fronts, dt, Hp, N)                                   
+        z_fronts, Hp, infiltration, max_bin, frontspeed, exfil_vol = funcs.handle_infiltration (rain_vec[i], profiles[profile][0], z_fronts, dt, Hp, N)                                   
         z_fronts = funcs.capillary_relax(z_fronts, max_depth)
         logging.info(np.round(z_fronts[95:],3))
         inf_mm_day[i] = infiltration/dt*10
@@ -110,8 +113,6 @@ for j, profile in enumerate(profiles):
     #calculate the total infiltration [cm]
     mean_inf[j] = np.mean(inf_mm_day)
     infiltration_list.append(inf_mm_day)
-    if j == limit:
-        break
     #results_df  = pd.DataFrame(z_history).T
 
 #Merge results with Bofek data and write to file

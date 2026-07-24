@@ -12,7 +12,6 @@ Functions to run the 1D finite water content richards by Ogden et al. 2015 and T
     copy from original funcs.py, but adapted to accomodate layered soils. 
 
 '''
-from logging import exception
 import numpy as np
 
 import logging
@@ -201,14 +200,18 @@ def build_layers_by_soil(bofek, soils):
         for isoil_col, iz_col in zip(isoil_cols, iz_cols):
             isoil = int(row[isoil_col])
             depth = float(row[iz_col])
+            
 
             # remove the no_value 
             if isoil == 0 or depth == 99999:
                 break
 
+            top = layers[-1]['depth'] if layers else 0.0
+
             layers.append({
                 **soils[isoil],
-                'depth':   depth
+                'depth':   depth,
+                'thickness': depth - top
                 })
 
         layers_by_soil[name] = layers
@@ -241,46 +244,6 @@ def RK4 (z, Geff, MoL, Hp, dt, active = None):
     # Calculate the front advance
     dz = (dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
     return np.maximum(dz, 0.0)   # fronts only go down
-
-def harmonic_mean_unsat(z, soil, active_idx):
-    '''
-    calculate the harmonic mean Ks over all layers above current front depth
-    '''
-    
-    total_depth = 0.0
-    resistance  = 0.0         # sum of d_i / Ks_i
-    z_top       = 0.0
-
-    for layer in soil:
-        z_bot     = min(layer['depth'], z)
-        thickness = z_bot - z_top
-        if thickness <= 0:
-            break
-        total_depth += thickness
-        resistance  += thickness / layer['K_bins'][active_idx]
-        z_top        = z_bot
-        if z_bot >= z:
-            break
-
-    return total_depth / resistance if resistance > 0 else soil[0]['K_bins'][active_idx]
-
-def harmonic_mean_sat(profile):
-    '''
-    calculate the harmonic mean Ks over all layers above current front depth
-    '''
-    print(type(profile))
-    total_depth = profile[-1]['depth']
-    depths = np.array([layer['depth'] for layer in profile], dtype=float)
-    tops = np.concatenate(([0.0], depths[:-1]))
-    thickness = depths - tops
-    Ks = np.array([layer['K_bins'][np.abs(layer['theta_bins'] - layer['theta_init']).argmin()] 
-                   for layer in profile])
-
-    resistance = np.sum(thickness/Ks)
-
-    harmonic_mean_ks = total_depth/resistance
-
-    return harmonic_mean_ks
 
 
 
@@ -330,89 +293,87 @@ def effective_cap_drive (soil, theta_d):
 
 
 
-def handle_infiltration (rainfall_rate, profile, z_fronts, dt, Hp, N):
+def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp, N):
     '''
-    for one time step calculate the infiltration per bin and substract the infiltration from each bin from the total
+    for one time step calculate the infiltration per bin  for one soil layer and substract the infiltration from each bin from the total
     if the infiltration from a bin is more than what is left, function breaks and the infiltration for that bin is the remainder
     '''
     
     rain_sum = rainfall_rate* dt 
     water_available = Hp + rain_sum # this thus creates that there is no ponded head effect from rainfall during this timestep
 
-    z_new = np.copy(z_fronts)
-
-    #Calculation of infiltration of fully saturated bins (defined by theta_bins below h_init)
-    harmonic_mean_ksat = harmonic_mean_sat(profile)
-    sat_inf = harmonic_mean_ksat * dt #FIXLATER: add ponded head
-    water_available -= sat_inf
-    logger.info(f' sat_inf = {sat_inf}')
-
-
-    for j in range(0, N):
-        #check in which soillayer the front currently is. id is rthe current soil layer id for brevity
-        depths = np.array([layer['depth'] for layer in profile])
-        id = min(np.searchsorted(depths,z_fronts[j]),len(profile)-1) #Assume that below max depth, the properties of the last layer continue
-
-        #calculate the bin id of the highest fully saturated bin
-        sat_idx =(np.abs(profile[id]['theta_bins']-profile[id]['theta_init'])).argmin()
-        #and the corresponding θ
-        if sat_idx == 0:
-            theta_i = profile[id]['theta_r']
-        # elif len(sat_idx) == N: # prevent problems when all bins are completetly full
-        #     theta_i = bins['theta_bins'][np.max(sat_idx)]
-        else:
-            theta_i = profile[id]['theta_bins'][sat_idx]
-
-
-        #calculate the highest active bin, if no bins are active yet, this ois the bin just after the fully saturated bins.
-        try:
-            active_idx = np.max(np.where(z_fronts > 0 ))    # get the array of bins that are active #FIXLATER: check if this works at initialisation.
-        except ValueError:
-            active_idx = active_idx = sat_idx+1
-
-        theta_d = profile[id]['theta_bins'][active_idx]
-        
-            
-  
-        #check if bin is sat or unsat, if sat, continue #CHECK: should it be < or <=
-        if profile[id]['theta_bins'][j]<=profile[id]['theta_bins'][sat_idx]:
-            continue
-
-        #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
-        #This varies per bin since K and Δθ may be different since bin fronts may be in differnt soil layer.
-        #Here the Van Genuchten relationships for calculating MoL of the current soil layer are used. 
-        #FIXLATER: for simplicity, the front speed is still assumed uniform, while in reality this may not the case since fronts in higher bins may still be in another layer. 
-        try:
-            MoL = ((profile[id]['K_bins'][active_idx] - profile[id]['K_bins'][sat_idx]) #FIX: the K values should be some har,onic mean, but of which values?
-                    /
-                (theta_d - theta_i)).item()
-        except ZeroDivisionError:
-            logging.warning(f'theta_i = {theta_i} = theta_d = {theta_d}, setting MoL to 0')
-            MoL = 0
-
-        #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
-        # FIXLATER should be dependent on the highest active bin form last iter
-        Geff = effective_cap_drive(profile[id], theta_d)
     
-        '''
-        print(
-                f"theta_i={theta_i}",
-                f"theta_d={theta_d}",
-                f"MoL={MoL}",
-                f"Geff={Geff}"
-            )
-        '''
+    # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
+    # θi is the left most bin were the water extends form surface to max_depth
+    try:
+        sat_idx = np.max(np.where(z_fronts >= soil['thickness'])[0])
+    except ValueError:
+        sat_idx = np.abs(soil['theta_bins']-soil['theta_init']).argmin()
+    if sat_idx == 0:
+        theta_i = soil['theta_r']
+    # elif len(sat_idx) == N: # prevent problems when all bins are completetly full
+    #     theta_i = bins['theta_bins'][np.max(sat_idx)]
+    else:
+        theta_i = soil['theta_bins'][sat_idx]
 
 
+    #calculate the highest active bin, if no bins are active yet, this is the bin just after the fully saturated bins.
+    try:
+        active_idx = np.max(np.where(z_fronts > 0 ))    # get the array of bins that are active #FIXLATER: check if this works at initialisation.
+    except ValueError:
+        active_idx = active_idx = sat_idx+1
+
+    theta_d = soil['theta_bins'][active_idx]
+
+    logging.info(f'active_idx = {active_idx}, sat_idx = {sat_idx}, θd = {theta_d}, θi = {theta_i}')
+
+
+    #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
+    try:
+        MoL = ((soil['K_bins'][active_idx] - soil['K_bins'][sat_idx]) 
+            /(theta_d - theta_i)).item()
+    except ZeroDivisionError:
+        logging.warning(f'theta_i = {theta_i} = theta_d = {theta_d}, setting MoL to 0')
+        MoL = 0
+
+    #calculate Geff, which is the max of |ψ(θd)| and HcM as calculated by Morel Seytoux
+    # FIXLATER should be dependent on the highest active bin form last iter
+    Geff = effective_cap_drive(soil, theta_d)
+
+    '''
+    print(
+            f"theta_i={theta_i}",
+            f"theta_d={theta_d}",
+            f"MoL={MoL}",
+            f"Geff={Geff}"
+        )
+    '''
+
+    z_new = np.copy(z_fronts)
+    K_bins = soil['K_bins']
+    delta_theta = float(soil['delta_theta'])
+    
+    # NEW: Separate calculation of infiltration of fully saturated bins
+    #  calculate the demand
+    sat_inf = K_bins[sat_idx] * (1) *dt #this is saturated infiltration for bins touching GW [cm] # add + Hp/max_depth to add extra head due to ponding
+    # caluclate left over water for unsat bins
+    water_available -= sat_inf
+    max_bin = sat_idx # for printing if all bins are full
+    logger.info(f'max sat = {sat_idx}, sat_inf = {sat_inf}, k_sat = {K_bins[sat_idx]}')
+
+
+    for j in range(sat_idx + 1, len(z_fronts)):
+
+        #calculate potential front advance if water supply is unlimited
         if z_fronts[j] > 0:
             dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
             #print(f'bin {j} already active')
         else:
-            dz = profile[id]['dry_depth'][j]
+            dz = soil['dry_depth'][j]
             #print(f'bin {j} activated')
         
         #second calculate the actual infiltration
-        demand = dz * profile[id]['delta_theta'] #this computes the water depth that is potentially infiltrated in this bin and in this timestep
+        demand = dz * delta_theta #this computes the water depth that is potentially infiltrated in this bin and in this timestep
         if demand <= water_available:              
             z_new[j] += dz
             water_available -= demand
@@ -421,8 +382,8 @@ def handle_infiltration (rainfall_rate, profile, z_fronts, dt, Hp, N):
         else:
             #use last bit of available water for infiltration
             #print(f'demand = {demand}, water available = {water_available}')
-            z_new[j] += water_available / profile[id]['delta_theta']
-            dz = demand / profile[id]['delta_theta'] - water_available / profile[id]['delta_theta'] #leftover demand for unsatisfied bins
+            z_new[j] += water_available / delta_theta
+            dz = demand / delta_theta - water_available / delta_theta #leftover demand for unsatisfied bins
             # if water_available > 0:
                 #logger.info(f'no more water avalable for bin {j}, left over dz = {round(dz,2)}')
             water_available = 0
@@ -459,71 +420,27 @@ def handle_infiltration (rainfall_rate, profile, z_fronts, dt, Hp, N):
            
         #print(f'left over water = {water_available} cm, infiltrated water = {demand} cm')
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
-    front_inf = np.sum((z_new - z_fronts)  * profile[id]['delta_theta'])
+    front_inf = np.sum((z_new - z_fronts)  * soil['delta_theta'])
     infiltration = (sat_inf + front_inf) #infiltration in mm/day at this time step
     logger.info(f'sat_inf = {sat_inf}, front_inf = {front_inf}, cum_inf = {infiltration}')
-    z_new = np.minimum(z_new, profile[-1]['depth'])
+    
+    #Track the amount of water leaving the layer and set z_new to the maximum depth of the layer
+    z_total = z_new
+    z_new = np.minimum(z_new, soil['thickness'])
+    exfil_array = (z_total-z_new) * delta_theta
+    exfil_vol = np.sum(exfil_array)
+    #exfil_psi = soil['h_bins'][np.max(np.where(exfil_array>0))]
+
     try:
-        first_bin = np.min(np.where(z_new< profile[-1]['depth']))
+        first_bin = np.min(np.where(z_new< soil['thickness']))
     except ValueError:
         first_bin = 0
     front_speed = z_new[first_bin] - z_fronts[first_bin]
     #logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
-    return z_new, water_available, infiltration, max_bin,front_speed
+    return z_new, water_available, infiltration, max_bin,front_speed, exfil_vol
 
-##### FALLING SLUGS #####
-'''
-Create slugs when rainfall is less then demand, 
-advance the slugs through the soil, 
-merge overlapping slugs,
-merge slugs with infiltration fronts if these overtake slugs
-FIXLATER merge slugs to groundwater
-FIXLATER check how multiple sulgs in one bin behave
-'''
+#def layered_soil_handler():
 
-
-def init_detach_slugs (z_fronts):
-    '''
-    Initiate falling slugs when rainfall supply is less then the demand from the activated bins.
-    gives a list of dicts 
-
-    '''
-    slugs = []
-    for j, z_j in enumerate(z_fronts):
-        if z_j > 0.0:
-            slugs.append({
-                'bin':   j,
-                'z_top': 0.0,
-                'z_bot': z_j,
-            })
-    return slugs
-
-def advance_slugs (slugs,K_bins, delta_theta, dt):
-    '''
-    advance the infiltration slugs for one timestep using Ogden eq 19
-    FIXLATER change to RK4 for accuracy
-    '''
-    for slug in slugs:
-        j = slug['bin']
-        dzdt = (K_bins[j]-K_bins[j-1])/delta_theta
-        slug['z_top'] += dzdt * dt
-        slug['z_bot'] += dzdt * dt
-    return slugs
-
-def merge_slugs ():
-    '''
-    Function to merge slugs that collide. Fronts that go to a higher theta have higher speeds and therefore may collide with either 
-    another falling slug or FIXLATER capillary groundwater
-    Logic:
-    since all slugs in a bin have the same dz/dt the overtaking can only be caused by capillary relaxation
-    if 
-    I am doubting whether this method is mass conservative..
-    '''
-
-
-
-
-        
 
 
 ###### CAPILLARY RELAXATION ####
