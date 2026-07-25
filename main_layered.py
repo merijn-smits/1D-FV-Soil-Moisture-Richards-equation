@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 import pandas as pd
 import logging
+import plotting
 
 '''
 the the main.loopred function, but adapted to accomodate layered soils from the bofek
@@ -95,6 +96,7 @@ for j, profile in enumerate(profiles):
     Hp_top_list = np.zeros(t_steps)
     Hp_bot_list = np.zeros(t_steps)
     mass_balance = np.zeros(t_steps)
+    cum_inf = np.zeros(t_steps)
 
     
 
@@ -112,12 +114,14 @@ for j, profile in enumerate(profiles):
         frontspeed_list[i] = frontspeed
         z_history[i,:] = z_fronts
         Hp_bot_list[i] = Hp_bot
+        
 
         #calculate mass balance per time step
         delta_Hp_top = Hp_top_list[i]-Hp_top_list[i-1]
         delta_Hp_bot = Hp_bot_list[i]-Hp_bot_list[i-1]
         delta_fronts = (np.sum(z_history[i]) - np.sum(z_history[i-1]))*profiles[profile][0]['delta_theta']
         mass_balance[i] = rain_vec[i]*dt - delta_Hp_top - delta_Hp_bot - delta_fronts
+        cum_inf[i] = delta_Hp_bot + delta_fronts
         #logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
 
     #calculate the total infiltration [cm]
@@ -125,6 +129,7 @@ for j, profile in enumerate(profiles):
     infiltration_list.append(inf_mm_day)
     #results_df  = pd.DataFrame(z_history).T
 
+'''
 #Merge results with Bofek data and write to file
 results = pd.DataFrame({
     'soil_code' : soil_code,
@@ -142,7 +147,7 @@ bofek_new = pd.merge(bofek, results, left_on = 'isoil1', right_on = 'soil_code')
 bofek_new.to_csv(f'./results/Inf_{round(rainfall_rate)}mm_h_{h_init}_z_{round(max_depth)}.csv', sep = ',')
 
 
-'''
+
 #### Evaluation of results ####
 eval_df = pd.DataFrame({
     "max_bin": max_bin_list,
@@ -156,13 +161,14 @@ eval_df = pd.DataFrame({
 abs_error = cum_rain - cum_inf[-1] - Hp
 perc_error = abs_error/cum_rain*100
 
+
 #Create eval plots
-fig, axes = plotting.plot_evaluation(cum_inf, frontspeed_list, Hp_list, max_bin_list)
+fig, axes = plotting.plot_evaluation(cum_inf, frontspeed_list, Hp_top_list, Hp_bot_list, max_bin_list)
 plt.show()
 
 
 #plot with theta
-x_theta = bins["theta_bins"]
+x_theta = profiles['EZ50A'][0]["theta_bins"]
 
 fig, ax = plt.subplots(figsize=(8, 5))
 line, = ax.plot(x_theta, z_history[0], marker="o", lw=2)
@@ -185,7 +191,6 @@ anim = FuncAnimation(fig, update, frames=z_history.shape[0], interval=50, blit=F
 plt.show()
 
 anim
-
 
 #### left over ####
 

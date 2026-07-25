@@ -14,8 +14,8 @@ def _make_twin_axis(ax, position=None, side="right"):
     return twin
 
 
-def plot_evaluation(cum_inf, frontspeed, Hp_list, max_bin_list,
-                    title="Cumulative Infiltration, Front speed, Ponded water, Max bin",
+def plot_evaluation(cum_inf, frontspeed, Hp_top_list, Hp_bot_list, max_bin_list,
+                    title="Cumulative Infiltration, Front speed, Ponded water top, ponded water bot, Max bin",
                     figsize=(8, 5), savepath=None):
     """
     Plot evaluation metrics with two left y-axes and two right y-axes.
@@ -35,9 +35,10 @@ def plot_evaluation(cum_inf, frontspeed, Hp_list, max_bin_list,
     ax_left2.set_ylabel("cum_inf", color="tab:blue")
     ax_left2.tick_params(axis="y", labelcolor="tab:blue")
 
-    # right axis 1 for Hp
+    # right axis 1 for Hp (both top and bot on same axis)
     ax_right1 = ax_left1.twinx()
-    l3, = ax_right1.plot(Hp_list, color="tab:orange", label="Ponded depth")
+    l3, = ax_right1.plot(Hp_top_list, color="tab:orange", label="Ponded depth top")
+    l5, = ax_right1.plot(Hp_bot_list, color="pink", label="Ponded depth bot")
     ax_right1.set_ylabel("Ponded depth", color="tab:orange")
     ax_right1.tick_params(axis="y", labelcolor="tab:orange")
 
@@ -47,7 +48,7 @@ def plot_evaluation(cum_inf, frontspeed, Hp_list, max_bin_list,
     ax_right2.set_ylabel("max_bin", color="tab:purple")
     ax_right2.tick_params(axis="y", labelcolor="tab:purple")
 
-    lines = [l1, l2, l3, l4]
+    lines = [l1, l2, l3, l4, l5]
     labels = [ln.get_label() for ln in lines]
     ax_left1.legend(lines, labels, loc='center right')
 
