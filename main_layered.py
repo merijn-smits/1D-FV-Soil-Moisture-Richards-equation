@@ -75,7 +75,7 @@ profiles = funcs.build_layers_by_soil(bofek, soils)
 
 ##INTIALISE RESULTS##
 
-soil_code = np.array(staring['unit'])
+#soil_code = np.array(staring['unit'])
 mean_inf = np.zeros(len(profiles))
 infiltration_list = []
 
@@ -83,7 +83,8 @@ for j, profile in enumerate(profiles):
     if profile != 'EZ50A':
         continue
     #Set initial values
-    Hp = 0 #initial ponding depth [cm]
+    Hp_top = 0 #initial ponding depth [cm]
+    Hp_bot = 0
     z_fronts = np.zeros(N)     
     z_history = np.zeros((t_steps, N))
 
@@ -91,27 +92,33 @@ for j, profile in enumerate(profiles):
     inf_mm_day = np.zeros(t_steps)
     max_bin_list = np.zeros(t_steps)
     frontspeed_list = np.zeros(t_steps)
-    Hp_list = np.zeros(t_steps)
-    exfil_vol_list = np.zeros(t_steps)
-    exfil_psi_list = np.zeros(t_steps)
-    z_total_list = np.zeros((t_steps,N))
+    Hp_top_list = np.zeros(t_steps)
+    Hp_bot_list = np.zeros(t_steps)
+    mass_balance = np.zeros(t_steps)
 
     
 
     #Timeloop
     for i ,t  in enumerate(time_vec):
         logging.info(f't = {i}, rain = {rain_vec[i]}')
-        z_fronts, z_total, Hp, infiltration, max_bin, frontspeed, exfil_vol = funcs.handle_infiltration (rain_vec[i], profiles[profile][0], z_fronts, dt, Hp, N)                                   
+        z_fronts, Hp_top, infiltration, max_bin, frontspeed, Hp_bot = funcs.handle_infiltration (rain_vec[i], profiles[profile][0], z_fronts, dt, Hp_top, Hp_bot, N)                                   
         z_fronts = funcs.capillary_relax(z_fronts, max_depth)
-        logging.info(np.round(z_fronts[95:],3))
+
+        #checks 
+        #logging.info(np.round(z_fronts[95:],3))
         inf_mm_day[i] = infiltration/dt*10
-        Hp_list[i] = Hp
+        Hp_top_list[i] = Hp_top
         max_bin_list[i] = max_bin
         frontspeed_list[i] = frontspeed
         z_history[i,:] = z_fronts
-        exfil_vol_list[i] = exfil_vol
-        z_total_list[i,:] = z_total
-        logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
+        Hp_bot_list[i] = Hp_bot
+
+        #calculate mass balance per time step
+        delta_Hp_top = Hp_top_list[i]-Hp_top_list[i-1]
+        delta_Hp_bot = Hp_bot_list[i]-Hp_bot_list[i-1]
+        delta_fronts = (np.sum(z_history[i]) - np.sum(z_history[i-1]))*profiles[profile][0]['delta_theta']
+        mass_balance[i] = rain_vec[i]*dt - delta_Hp_top - delta_Hp_bot - delta_fronts
+        #logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
 
     #calculate the total infiltration [cm]
     mean_inf[j] = np.mean(inf_mm_day)

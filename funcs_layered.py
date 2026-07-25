@@ -224,7 +224,7 @@ def build_layers_by_soil(bofek, soils):
 Calculate the infiltration depth using the Equation form Ogden and solve it numerically using Runge-Kutta 4
 '''
 
-def RK4 (z, Geff, MoL, Hp, dt, active = None):
+def RK4 (z, Geff, MoL, head, dt, active = None):
     '''
     Use 4-th order Runge-Kutta to advance the ODE one timestep for 1 bin
     ODE: dz_j/dt = ΅((K(θd)-K(θi)) / (θd-θi) * (1 + (h_j + Hp)/z_j)
@@ -232,7 +232,7 @@ def RK4 (z, Geff, MoL, Hp, dt, active = None):
 
     # calculate for each front infiltration velocity Ogden eq 18   
     def rhs(z):
-        dz = MoL * (1 + (Geff )/z) # add +Hp to Geff for ponded depth
+        dz = MoL * (1 + (head + Geff )/z) # add +Hp to Geff for ponded depth
         return dz
 
     # Calculate the Runge-Kutta steps
@@ -293,15 +293,17 @@ def effective_cap_drive (soil, theta_d):
 
 
 
-def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp, N):
+def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
     '''
     for one time step calculate the infiltration per bin  for one soil layer and substract the infiltration from each bin from the total
     if the infiltration from a bin is more than what is left, function breaks and the infiltration for that bin is the remainder
     '''
     
     rain_sum = rainfall_rate* dt 
-    water_available = Hp + rain_sum # this thus creates that there is no ponded head effect from rainfall during this timestep
+    water_available = Hp_top + rain_sum # this thus creates that there is no ponded head effect from rainfall during this timestep
 
+    #calculate the head differnce between the botom and top, which is the force driving infiltration
+    head = Hp_top - Hp_bot
     
     # calculate the term (K(θd)-Κ(θi))/(θd-θi) (first term of equation 18 from Ogden)
     # θi is the left most bin were the water extends form surface to max_depth
@@ -352,21 +354,22 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp, N):
     z_new = np.copy(z_fronts)
     K_bins = soil['K_bins']
     delta_theta = float(soil['delta_theta'])
+
     
     # NEW: Separate calculation of infiltration of fully saturated bins
     #  calculate the demand
-    sat_inf = K_bins[sat_idx] * (1) *dt #this is saturated infiltration for bins touching GW [cm] # add + Hp/max_depth to add extra head due to ponding
+    sat_inf = K_bins[sat_idx] * (1 + head/soil['thickness']) *dt #this is saturated infiltration for bins touching GW [cm] # add + Hp/max_depth to add extra head due to ponding
     # caluclate left over water for unsat bins
     water_available -= sat_inf
     max_bin = sat_idx # for printing if all bins are full
     logger.info(f'max sat = {sat_idx}, sat_inf = {sat_inf}, k_sat = {K_bins[sat_idx]}')
-
+    
 
     for j in range(sat_idx + 1, len(z_fronts)):
 
         #calculate potential front advance if water supply is unlimited
         if z_fronts[j] > 0:
-            dz = RK4(z_fronts[j], Geff, MoL, Hp, dt)
+            dz = RK4(z_fronts[j], Geff, MoL, head, dt)
             #print(f'bin {j} already active')
         else:
             dz = soil['dry_depth'][j]
@@ -425,10 +428,13 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp, N):
     logger.info(f'sat_inf = {sat_inf}, front_inf = {front_inf}, cum_inf = {infiltration}')
     
     #Track the amount of water leaving the layer and set z_new to the maximum depth of the layer
-    z_total = z_new.copy()
+    z_total_unsat = z_new.copy()
     z_new = np.minimum(z_new, soil['thickness'])
-    exfil_array = (z_total-z_new) * delta_theta
-    exfil_vol = np.sum(exfil_array)
+    unsat_exfil = np.sum((z_total_unsat-z_new) * delta_theta)
+    exfil_tot = unsat_exfil + sat_inf
+    
+    #add to the ponded water at the bottom
+    Hp_bot += exfil_tot
     #exfil_psi = soil['h_bins'][np.max(np.where(exfil_array>0))]
 
     try:
@@ -437,7 +443,7 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp, N):
         first_bin = 0
     front_speed = z_new[first_bin] - z_fronts[first_bin]
     #logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
-    return z_new, z_total, water_available, infiltration, max_bin,front_speed, exfil_vol
+    return z_new, water_available, infiltration, max_bin,front_speed, Hp_bot
 
 #def layered_soil_handler():
 
