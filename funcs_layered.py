@@ -288,7 +288,7 @@ def effective_cap_drive (soil, theta_d):
 
     HcM = 1/alpha * (0.046*m + 2.07*m**2 + 19.5*m**3)/(1 + 4.7*m + 16*m**2)
     psi_d = h_theta(theta_d, theta_r,theta_e, alpha, m, n)
-    logging.info(f'HcM = {HcM}, psi_d = {psi_d}')
+    #logging.info(f'HcM = {HcM}, psi_d = {psi_d}')
     return max(HcM, psi_d)
 
 
@@ -327,7 +327,7 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
 
     theta_d = soil['theta_bins'][active_idx]
 
-    logging.info(f'active_idx = {active_idx}, sat_idx = {sat_idx}, θd = {theta_d}, θi = {theta_i}')
+    #logging.info(f'active_idx = {active_idx}, sat_idx = {sat_idx}, θd = {theta_d}, θi = {theta_i}')
 
 
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
@@ -362,7 +362,7 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
     # caluclate left over water for unsat bins
     water_available -= sat_inf
     max_bin = sat_idx # for printing if all bins are full
-    logger.info(f'max sat = {sat_idx}, sat_inf = {sat_inf}, k_sat = {K_bins[sat_idx]}')
+    #logger.info(f'max sat = {sat_idx}, sat_inf = {sat_inf}, k_sat = {K_bins[sat_idx]}') 
     
 
     for j in range(sat_idx + 1, len(z_fronts)):
@@ -393,8 +393,12 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
             #print(f'no more water avalable for bin {j}, left over dz = {dz}')
            
             #get water from the bins to the right to satisfy the needs to the left
-            #first find the currently last active bin
-            last_non_zero = max(np.where(z_new>0)[0])
+            #first find the currently last active bin, if none are active, this is the bin id of theta_init
+            try:
+                last_non_zero = max(np.where(z_new>0)[0])
+            except ValueError:
+                last_non_zero = -1 #no bins are active infiltration fronts
+
             while((dz >0) & (last_non_zero > j)):
                 if(z_new[last_non_zero]> dz):
                     #if water in the right most bin can satisfy the whole demand of the bin j
@@ -403,15 +407,16 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
                     dz = 0
                     #logger.info(f'full demand of bin {j} satisfied by bin {last_non_zero}')
                      # to ensure the left over water in the current max bin is also emptied in other bins
-                elif(z_new[last_non_zero]>0):
-                    #if water needs to be taken from more than 1 bin
+                elif(z_new[last_non_zero]>=0):
+                    #if water needs to be taken from more than 1 bin, take the remainder of this bin and go one bin to the left
                     z_new[j] += z_new[last_non_zero]
                     dz -= z_new[last_non_zero]
                     z_new[last_non_zero]=0
+                    last_non_zero -= 1 #and go one bin to the left
                     #logger.info(f'all water from {last_non_zero} to {j}, demand not satisfied')
-                    last_non_zero -= 1
-                #else:
-                    #logger.info(f'no water left in bin {last_non_zero}, proceeding')
+                #elif(z_new[last_non_zero] == 0):
+                #    last_non_zero = -1 #no water 
+                    #logger.info(f'no water left in bin {last_non_zero}, proceeding'
                 #print(f'last_non_zero = {last_non_zero}, j = {j}')
             if z_new[j]>0:
                 max_bin = j
@@ -425,7 +430,7 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
         #print(f'j = {j}, drydepth = {bins['dry_depth'][j]},dz = {dz}, demand = {demand}, K-bins = {bins['K_bins'][j]}')
     front_inf = np.sum((z_new - z_fronts)  * soil['delta_theta'])
     infiltration = (sat_inf + front_inf) #infiltration in mm/day at this time step
-    logger.info(f'sat_inf = {sat_inf}, front_inf = {front_inf}, cum_inf = {infiltration}')
+    #logger.info(f'sat_inf = {sat_inf}, front_inf = {front_inf}, cum_inf = {infiltration}')
     
     #Track the amount of water leaving the layer and set z_new to the maximum depth of the layer
     z_total_unsat = z_new.copy()
