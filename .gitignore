@@ -1,3 +1,12 @@
+# project specific ignores
+# dirs
+old/
+Graphs/
+results/
+
+#data types
+*.csv
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -7,7 +16,7 @@ __pycache__/
 *.so
 
 # Distribution / packaging
-old/
+
 .Python
 build/
 develop-eggs/

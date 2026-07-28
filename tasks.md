@@ -29,12 +29,14 @@
 - ~~Integrate full staringreeks~~
 
 - ~~compare with (modified) Green-Ampt ~~
-- compare with observations
-- add layered soils
+- ~~add layered soils~~
+- **evaluate sat_inf, only the highest saturated bin? multiply by Δθ? Sum the infiltation in sat_bins?**
+
 
 
 ## Long-term ##
 - ~~make theta_init dependent on the soil~~
+- compare with observations
 - the dips in inifiltration for ponded only
 - clean up 'bins' input
 - evaluate the oscillation in infiltration for rainfall infiltration
