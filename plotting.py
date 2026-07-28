@@ -1,4 +1,7 @@
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.animation import FuncAnimation
 
 
 def _make_twin_axis(ax, position=None, side="right"):
@@ -58,3 +61,205 @@ def plot_evaluation(cum_inf, frontspeed, Hp_top_list, Hp_bot_list, max_bin_list,
         fig.savefig(savepath, bbox_inches="tight")
 
     return fig, (ax_left1, ax_left2, ax_right1, ax_right2)
+
+
+
+def animate_fronts(z_history, profiles, profile_name, Hp_array, interval=50):
+    """
+    Animate wetting front depths over time for a layered soil profile.
+
+    Each layer is plotted in absolute depth on a shared axis, with the
+    theta_bins of each layer mapped to the range [0, 1] on the x-axis.
+    Layer interfaces are marked with horizontal grey lines.
+
+    Parameters
+    ----------
+    z_history    : np.ndarray, shape (t_steps, N, n_layers)
+                   Wetting front depths per bin per layer per time step [cm].
+    profiles     : dict
+                   The profiles dict from main.py. Must contain profile_name
+                   as a key, whose value is a list of soil layer dicts. Each
+                   layer dict must contain:
+                       'theta_bins' : array (N,)
+                       'theta_r'    : float
+                       'theta_e'    : float
+                       'thickness'  : float  [cm]
+    profile_name : str
+                   Key into profiles to select the soil profile to animate.
+    interval     : int, optional
+                   Time between animation frames in milliseconds. Default 50.
+
+    Returns
+    -------
+    anim : matplotlib.animation.FuncAnimation
+           The animation object. Keep a reference to prevent garbage collection.
+    """
+    layers     = profiles[profile_name]
+    n_layers   = len(layers)
+    t_steps    = z_history.shape[0]
+    #N          = z_history.shape[1]
+
+    # --- Compute absolute depth offsets for each layer ---
+    # Layer 0 starts at depth 0; each subsequent layer starts where the
+    # previous one ends.
+    layer_tops = np.zeros(n_layers)
+    for k in range(1, n_layers):
+        layer_tops[k] = layer_tops[k - 1] + layers[k - 1]['thickness']
+
+    total_depth = layer_tops[-1] + layers[-1]['thickness']
+
+    theta_raw = [layers[k]['theta_bins'] for k in range(n_layers)]    
+
+    # --- Colour palette: one colour per layer ---
+    cmap   = plt.cm.tab10
+    colors = [cmap(k) for k in range(n_layers)]
+
+    # --- Set up figure ---
+    fig, ax = plt.subplots(figsize=(7, 8))
+
+    ax.set_xlabel("Soil moisture θ [-]")    
+    ax.set_ylabel("Depth [cm]")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(total_depth * 1.03, -total_depth * 0.02)   # invert: 0 at top
+    ax.set_title(f"Profile: {profile_name}  |  Time step 1 / {t_steps}")
+
+    # --- Draw layer interface lines ---
+    for k in range(1, n_layers):
+        ax.axhline(
+            y       = layer_tops[k],
+            color   = 'grey',
+            lw      = 0.8,
+            ls      = '--',
+            zorder  = 1,
+            label   = f'Interface {k}' if k == 1 else '_nolegend_'
+        )
+        ax.text(
+            1.01, layer_tops[k],
+            f'Layer {k} / {k+1}',
+            va        = 'center',
+            ha        = 'left',
+            fontsize  = 7,
+            color     = 'grey',
+            transform = ax.get_yaxis_transform()
+        )
+
+    #draw vertical lines at theta_e and theta_r    
+    for k in range(n_layers):
+        top    = layer_tops[k]
+        bottom = layer_tops[k] + layers[k]['thickness']
+
+        ax.plot(
+            [layers[k]['theta_r'], layers[k]['theta_r']], [top, bottom],
+            color = colors[k], lw = 1.0, ls = ':',  zorder = 1,
+            label = 'θᵣ' if k == 0 else '_nolegend_'
+        )
+        ax.plot(
+            [layers[k]['theta_e'], layers[k]['theta_e']], [top, bottom],
+            color = colors[k], lw = 1.0, ls = '-.', zorder = 1,
+            label = 'θₑ' if k == 0 else '_nolegend_'
+        )
+
+    # One text per interface: surface (top of layer 0) + between layers + bottom
+    hp_texts = []
+    # Interface positions in absolute depth: surface=0, then layer tops from layer 1 onward
+    interface_depths = [0.0] + [layer_tops[k] for k in range(1, n_layers)] + [total_depth]
+
+    for idx, depth in enumerate(interface_depths):
+        txt = ax.text(
+            0.02, depth,                     # left side of plot, at interface depth
+            f'Hp[{idx}] = 0.000 cm',
+            va        = 'center',
+            ha        = 'left',
+            fontsize  = 7,
+            color     = 'black',
+            bbox      = dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7, ec='none'),
+            zorder    = 3
+        )
+        hp_texts.append(txt)
+
+    # --- Draw shaded background bands to distinguish layers ---
+    for k in range(n_layers):
+        top    = layer_tops[k]
+        bottom = layer_tops[k] + layers[k]['thickness']
+        ax.axhspan(
+            top, bottom,
+            alpha    = 0.04,
+            color    = colors[k],
+            zorder   = 0
+        )
+
+    # --- Initialise one line per layer ---
+    lines = []
+    for k in range(n_layers):
+        line, = ax.plot(
+            [], [],
+            color  = colors[k],
+            lw     = 1.5,
+            marker = 'o',
+            ms     = 2,
+            label  = f'Layer {k + 1}',
+            zorder = 2
+        )
+        lines.append(line)
+
+    # --- Legend ---
+    # Add a dummy handle for the interface line
+    interface_handle = mpatches.Patch(
+        facecolor = 'none',
+        edgecolor = 'grey',
+        linestyle = '--',
+        linewidth = 0.8,
+        label     = 'Layer interface'
+    )
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(
+        handles  = handles + [interface_handle],
+        labels   = labels  + ['Layer interface'],
+        loc      = 'lower right',
+        fontsize = 8
+    )
+
+    # --- Animation update function ---
+    def update(frame):
+        for k in range(n_layers):
+            z_k     = z_history[frame, :, k]           # front depths this frame, this layer
+            x_k     = theta_raw[k]                    # normalised theta for this layer
+            offset  = layer_tops[k]                    # absolute depth offset
+
+            # Only plot bins that have a non-zero front depth.
+            # Fronts at zero are inactive; fronts at soil thickness are
+            # fully saturated through the layer. Both are plotted:
+            #   - zero front: excluded (not yet reached)
+            #   - thickness front: plotted at the layer bottom
+            active = z_k > 0.0
+            if np.any(active):
+                lines[k].set_xdata(x_k[active])
+                lines[k].set_ydata(z_k[active] + offset)
+            else:
+                lines[k].set_xdata([])
+                lines[k].set_ydata([])
+
+        # Update Hp counters
+        for idx, txt in enumerate(hp_texts):
+            hp_val = Hp_array[frame, idx] if frame < Hp_array.shape[0] else 0.0
+            txt.set_text(f'Hp[{idx}] = {hp_val:.3f} cm')
+
+        ax.set_title(
+            f"Profile: {profile_name}  |  "
+            f"Time step {frame + 1} / {t_steps}"
+        )
+
+        return lines + hp_texts     # include texts in return so blit works if enabled later
+
+    anim = FuncAnimation(
+        fig,
+        update,
+        frames   = t_steps,
+        interval = interval,
+        blit     = False
+    )
+
+    plt.tight_layout()
+    plt.show()
+
+    return anim

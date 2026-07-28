@@ -257,20 +257,6 @@ Only if all theta bins are filled, water is saved as ponded
 Still need to think about how to calculate the head from ponded water. 
 For now just use the ponded depth from the previous step and add uninfiltrated water at the end to ponded.
 '''
-def infiltration_capacity(z_fronts, Geff, K_bins, dtheta, N, Hp=0.0):
-    """
-    no longer used, remove
-
-    Total potential infiltration rate f_p [cm/day]: the rate at which the soil
-    can accept water given the current front positions and ponded depth.
-
-    f_p / dtheta = sum_j [ K_j * (z_j + h_j + Hp) / (dtheta * z_j) ]   [Ogden 2015, eq. 18 and integrate/sum according to 13]
-    """
-    f_p = 0.0
-    for j in range(len(z_fronts)):
-        if z_fronts[j] > 0.0:
-            f_p += K_bins[j] * (z_fronts[j] + Geff + Hp) /  z_fronts[j]
-    return f_p
 
 def effective_cap_drive (soil, theta_d):
     '''
@@ -316,7 +302,7 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
     # elif len(sat_idx) == N: # prevent problems when all bins are completetly full
     #     theta_i = bins['theta_bins'][np.max(sat_idx)]
     else:
-        theta_i = soil['theta_bins'][sat_idx]
+        theta_i = soil['theta_bins'][sat_idx+1] #+1 because this is first bin NOT fully saturated
 
 
     #calculate the highest active bin, if no bins are active yet, this is the bin just after the fully saturated bins.
@@ -356,7 +342,8 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
     delta_theta = float(soil['delta_theta'])
 
     
-    # NEW: Separate calculation of infiltration of fully saturated bins
+    # NEW: Separate calculation of infiltration of fully saturated bins 
+    # CHECK: evaluate sat_inf, only the highest saturated bin? multiply by Δθ? Sum the infiltation in sat_bins?
     #  calculate the demand
     sat_inf = K_bins[sat_idx] * (1 + head/soil['thickness']) *dt #this is saturated infiltration for bins touching GW [cm] # add + Hp/max_depth to add extra head due to ponding
     # caluclate left over water for unsat bins
@@ -440,13 +427,13 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
     
     #add to the ponded water at the bottom
     Hp_bot += exfil_tot
-    #exfil_psi = soil['h_bins'][np.max(np.where(exfil_array>0))]
 
+    #calculate frontspeed (here assumed the speed of the left most infiltrating bin)
     try:
-        first_bin = np.min(np.where(z_new< soil['thickness']))
+        first_bin = np.min(np.where((z_new< soil['thickness']) & (z_new != 0))[0])
+        front_speed = z_new[first_bin] - z_fronts[first_bin]
     except ValueError:
-        first_bin = 0
-    front_speed = z_new[first_bin] - z_fronts[first_bin]
+        front_speed = 0
     #logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')
     return z_new, water_available, infiltration, max_bin,front_speed, Hp_bot
 

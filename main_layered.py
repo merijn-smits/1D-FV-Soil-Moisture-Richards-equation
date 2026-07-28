@@ -1,8 +1,6 @@
 from datetime import datetime
 import funcs_layered as funcs
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 import pandas as pd
 import logging
 import plotting
@@ -74,25 +72,11 @@ profiles = funcs.build_layers_by_soil(bofek, soils)
 
 
 ##INTIALISE RESULTS##
-
-#soil_code = np.array(staring['unit'])
-
-#Temporary reset up of logging
-for handler in logging.root.handlers[:]:
-    logging.root.removeHandler(handler)
-
-logging.basicConfig (filename = 'messages.log',
-                        filemode = 'w',
-                        encoding = 'utf-8',
-                        format = '{levelname}:{name}:{message}',
-                        style = '{')
-logging.info(f'time = {datetime.now()}')
-
 mean_inf = np.zeros(len(profiles))
 infiltration_list = []
 
 for j, profile in enumerate(profiles):
-    if profile != 'zVz':
+    if profile != "iWp":
         continue
     #Set initial values
     n_layers = len(profiles[profile])
@@ -137,44 +121,24 @@ for j, profile in enumerate(profiles):
             #checks 
             #logging.info(np.round(z_fronts[95:],3))
             inf_mm_day[i,layer] = infiltration/dt*10
-            #Hp_top_list[i,layer] = Hp_array[layer]
             max_bin_list[i,layer] = max_bin
             frontspeed_list[i,layer] = frontspeed
             z_history[i,:,layer] = z_fronts[:,layer]
-            #Hp_bot_list[i,layer] = Hp_array[layer+1]
-            
-            
 
-            # #calculate mass balance per time step per layer
-            # if i == 0:
-            #     delta_Hp_top = 0.0
-            #     delta_Hp_bot = 0.0
-            #     delta_fronts[layer] = 0.0
-            # else:
-            #     delta_Hp_top = Hp_array[i, layer]-Hp_array[i-1, layer]
-            #     delta_Hp_bot = Hp_array[i, layer+1]-Hp_array[i-1, layer+1]
-            #     delta_fronts[layer] = (np.sum(z_history[i,:,layer]) - np.sum(z_history[i-1,:,layer]))*profiles[profile][layer]['delta_theta']
             
-            # # For layer > 0, input is water arriving from layer above
-            # if layer == 0:
-            #     water_in = rain_vec[i] * dt
-            # else:
-            #     #other layers get influx from layer above
-            #     water_in = Hp_array[i, layer] - Hp_array[i-1, layer] 
-
-            # mass_balance[i, layer] = water_in - delta_Hp_bot - delta_fronts[layer]
-
             # Mass balance check per layer per timestep
             z_stored = np.sum(z_history[i,:,layer] * profiles[profile][layer]['delta_theta'])
             z_stored_prev = np.sum(z_history[max(0,i-1),:,layer] * profiles[profile][layer]['delta_theta']) if i>0 else 0
             delta_stored = z_stored - z_stored_prev
             delta_stored_vec[i,layer] = delta_stored
+
             #if first layer, water in = rain - Δ stored ponded at the top
             if layer == 0:
                 water_in = rain_vec[i] * dt - (Hp_array[i, layer]   - (Hp_array[i-1, layer]   if i>0 else 0))
             else:
             #for the other layer water in = waterdraining [layer-1][i] - Δ store at top [layer]
                 water_in  = water_out -(Hp_array[i, layer]   - (Hp_array[i-1, layer]   if i>0 else 0))
+            
             water_out = Hp_array[i, layer+1] - (Hp_array[i-1, layer+1] if i>0 else 0)
             mb_error  = water_in - water_out - delta_stored
             if abs(mb_error) > 1e-4:
@@ -182,8 +146,7 @@ for j, profile in enumerate(profiles):
                     f't={i} layer={layer}: MB error={mb_error:.6f} '
                     f'water_in={water_in:.4f} water_out={water_out:.4f} delta_stored={delta_stored:.4f}'
                 )
-            cum_inf[i,layer] = delta_Hp_bot + delta_fronts[layer]
-            Hp_array[i, layer]   - (Hp_array[i-1, layer]   if i>0 else 0) + delta_stored
+            cum_inf[i,layer] = water_in
             #logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
         #calculate total mass balance
         mass_bal_tot[i] = rain_vec[i]*dt - np.sum(Hp_array[i,:]-Hp_array[i-1,:])- np.sum(delta_stored_vec[i])
@@ -211,21 +174,6 @@ bofek_new = pd.merge(bofek, results, left_on = 'isoil1', right_on = 'soil_code')
 bofek_new.to_csv(f'./results/Inf_{round(rainfall_rate)}mm_h_{h_init}_z_{round(max_depth)}.csv', sep = ',')
 
 
-
-#### Evaluation of results ####
-eval_df = pd.DataFrame({
-    "max_bin": max_bin_list,
-    "front_speed": frontspeed_list,
-    "Hp": Hp_list,
-    "cum_inf": cum_inf})
-
-
-
-#calculate the mass balance error
-abs_error = cum_rain - cum_inf[-1] - Hp
-perc_error = abs_error/cum_rain*100
-
-'''
 #set layer to evaluate
 layer = 1
 
@@ -240,92 +188,11 @@ fig, axes = plotting.plot_evaluation(
 plt.show()
 
 '''
-#plot with theta
-x_theta = profiles['EZ50A'][0]["theta_bins"]
-
-fig, ax = plt.subplots(figsize=(8, 5))
-line, = ax.plot(x_theta, z_history[0], marker="o", lw=2)
-
-ax.set_xlabel("Soil moisture θ")
-ax.set_ylabel("Front depth [cm]")
-ax.set_title("Soil front depth over time")
-ax.invert_yaxis()
-ax.set_xlim(x_theta.min(), x_theta.max())
-ax.set_ylim(z_history.max() * 1.05, z_history.min() * 0.95)
-
-def update(frame):
-    line.set_xdata(x_theta)
-    line.set_ydata(z_history[frame])
-    ax.set_title(f"Time step {frame + 1} / {z_history.shape[0]}")
-    return (line,)
-
-anim = FuncAnimation(fig, update, frames=z_history.shape[0], interval=50, blit=False)
-
-plt.show()
-
-anim
-
-#### left over ####
-
-#Plot with bin index
-x_bins = np.arange(z_history.shape[1])
-fig, ax = plt.subplots(figsize=(8, 5))
-line, = ax.plot(x_bins, z_history[0], marker="o", lw=2)
-
-ax.set_xlabel("Bin index")
-ax.set_ylabel("Front depth [cm]")
-ax.set_title("Soil front depth over time")
-ax.invert_yaxis()
-ax.set_xlim(0, z_history.shape[1] - 1)
-ax.set_ylim(z_history.max() * 1.05, z_history.min() * 0.95)
-
-def update(frame):
-    line.set_ydata(z_history[frame])
-    ax.set_title(f"Time step {frame + 1} / {z_history.shape[0]}")
-    return (line,)
-
-anim = FuncAnimation(fig, update, frames=z_history.shape[0], interval=100, blit=False)
-
-plt.show()
-
-anim
-
-# create K(θ) plot
-x = bins["theta_bins"]
-y = (bins["K_bins"])
-
-fig, ax = plt.subplots()
-ax.plot(x, y, marker="o", linestyle="-")
-ax.set_xlabel("Soil moisture θ")
-ax.set_ylabel("Hydraulic conductivity K")
-ax.set_title("unsaturated hydraulic conductivity")
-plt.show()
-
-
-
-
-
-
-f_p = funcs.potential_infiltration_rate(z_fronts, test_bins['h_bins'], test_bins['K_bins'], test_bins['delta_theta'], Hp)
-
-#calulate the largest bin that is active
-theta_surf = funcs.invert_K(rainfall_rate, theta_r, theta_e, Ks, m, labda)
-
-#get the index from the closest theta bin
-theta_bins = test['theta_bins']
-idx = (np.abs(theta_bins - theta_surf)).argmin()
-
-sliced = {
-    key: value[:idx]
-    for key, value in test.items()
-    if isinstance(value, np.ndarray)
-}
-
-
-active = z_fronts > 0.0
-z_new = RK4(
-    z_fronts, h_bins, K_bins, dtheta, dt, Hp=0.0, active=active
+anim = plotting.animate_fronts(
+    z_history    = z_history,
+    profiles     = profiles,
+    profile_name = 'iWp',
+    Hp_array     = Hp_array,
+    interval     = 50        # ms between frames
 )
-Hp_new   = 0.0
-f_actual = rainfall_rate
-'''
+
