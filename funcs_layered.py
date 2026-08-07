@@ -297,10 +297,11 @@ def handle_infiltration (rainfall_rate, soil, z_fronts, dt, Hp_top, Hp_bot, N):
         sat_idx = np.max(np.where(z_fronts >= soil['thickness'])[0])
     except ValueError:
         sat_idx = np.abs(soil['theta_bins']-soil['theta_init']).argmin()
+
     if sat_idx == 0:
         theta_i = soil['theta_r']
-    # elif len(sat_idx) == N: # prevent problems when all bins are completetly full
-    #     theta_i = bins['theta_bins'][np.max(sat_idx)]
+    elif sat_idx == N-1: #prevent problems when all bins are completetly full
+        theta_i = soil['theta_bins'][sat_idx]
     else:
         theta_i = soil['theta_bins'][sat_idx+1] #+1 because this is first bin NOT fully saturated
 

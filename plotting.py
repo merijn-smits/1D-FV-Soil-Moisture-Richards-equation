@@ -4,6 +4,50 @@ import matplotlib.patches as mpatches
 from matplotlib.animation import FuncAnimation
 
 
+
+'''compare = pd.DataFrame({'layered':layered_inf, 'unlayered':unlayered_inf})
+compare['time_hr'] = time_vec* t_max*24
+compare['layered'] = compare['layered']/24
+compare['unlayered'] = compare['unlayered']/24
+
+#creatre plot
+soil = 'Zd21'
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(compare['time_hr'], compare['unlayered'], label='uniforme bodem', color='C0', linewidth=2)
+ax.plot(compare['time_hr'], compare['layered'],   label='gelaagde bodem',   color='C1', linewidth=2)
+ax.set_title(f'Effect van een gelaagde bodem voor bodem {soil}')
+ax.set_xlabel('Tijd (uur)')
+ax.set_ylabel('Infiltratie (mm/uur)')
+ax.legend()
+'''
+
+
+
+def plot_field_vs_wilting(
+    merged,
+    soil_col='soil_code',
+    field_col='field_capacity',
+    wilt_col='wilting_point',
+    figsize=(12, 6)
+):
+    x = merged[soil_col].astype(str)
+    width = 0.35
+    idx = np.arange(len(x))
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.set_title('Infiltratie voor bodems op veldcapaciteit en verwelkingspunt')
+    ax.bar(idx - width / 2, merged[field_col], width, label='Veldcapaciteit')
+    ax.bar(idx + width / 2, merged[wilt_col], width, label='Verwelkingspunt')
+
+    ax.set_xticks(idx)
+    ax.set_xticklabels(x, rotation=90)
+    ax.set_xlabel('Staringreeks')
+    ax.set_ylabel('Infiltratie (mm/uur)')
+    ax.legend()
+    fig.tight_layout()
+    return fig, ax
+
+
 def _make_twin_axis(ax, position=None, side="right"):
     twin = ax.twinx()
     if position is not None:
@@ -120,8 +164,8 @@ def animate_fronts(z_history, profiles, profile_name, Hp_array, interval=50):
     ax.set_xlabel("Soil moisture θ [-]")    
     ax.set_ylabel("Depth [cm]")
     ax.set_xlim(0, 1)
-    ax.set_ylim(total_depth * 1.03, -total_depth * 0.02)   # invert: 0 at top
-    ax.set_title(f"Profile: {profile_name}  |  Time step 1 / {t_steps}")
+    ax.set_ylim(30, -total_depth * 0.02)   # invert: 0 at top Change displayed depth
+    ax.set_title(f"Profile: {'Zand/B01'}  |  time (minutes) 1 / {round(t_steps/4)}")
 
     # --- Draw layer interface lines ---
     for k in range(1, n_layers):
@@ -151,13 +195,19 @@ def animate_fronts(z_history, profiles, profile_name, Hp_array, interval=50):
         ax.plot(
             [layers[k]['theta_r'], layers[k]['theta_r']], [top, bottom],
             color = colors[k], lw = 1.0, ls = ':',  zorder = 1,
-            label = 'θᵣ' if k == 0 else '_nolegend_'
+            label = 'θr' if k == 0 else '_nolegend_'
         )
         ax.plot(
             [layers[k]['theta_e'], layers[k]['theta_e']], [top, bottom],
             color = colors[k], lw = 1.0, ls = '-.', zorder = 1,
-            label = 'θₑ' if k == 0 else '_nolegend_'
+            label = 'θe' if k == 0 else '_nolegend_'
         )
+        ax.plot(
+            [layers[k]['theta_init'], layers[k]['theta_init']], [top, bottom],
+            color = colors[k], lw = 1.0, ls = '--', zorder = 1,
+            label = 'θi' if k == 0 else '_nolegend_'
+        )
+        
 
     # One text per interface: surface (top of layer 0) + between layers + bottom
     hp_texts = []
@@ -166,10 +216,10 @@ def animate_fronts(z_history, profiles, profile_name, Hp_array, interval=50):
 
     for idx, depth in enumerate(interface_depths):
         txt = ax.text(
-            0.02, depth,                     # left side of plot, at interface depth
+            0.98, depth,                     # left side of plot, at interface depth
             f'Hp[{idx}] = 0.000 cm',
             va        = 'center',
-            ha        = 'left',
+            ha        = 'right',
             fontsize  = 7,
             color     = 'black',
             bbox      = dict(boxstyle='round,pad=0.2', fc='white', alpha=0.7, ec='none'),
@@ -245,8 +295,8 @@ def animate_fronts(z_history, profiles, profile_name, Hp_array, interval=50):
             txt.set_text(f'Hp[{idx}] = {hp_val:.3f} cm')
 
         ax.set_title(
-            f"Profile: {profile_name}  |  "
-            f"Time step {frame + 1} / {t_steps}"
+            f"Profile: {'Zand/B01'}  |  "
+            f"time (minutes) {round((frame + 1)/4)} / {round(t_steps/4)}"
         )
 
         return lines + hp_texts     # include texts in return so blit works if enabled later

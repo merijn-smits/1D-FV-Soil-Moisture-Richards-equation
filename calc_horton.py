@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 '''
-This script fits the infiltration curves of e.g. the Modified green ampt equation and the Finite volume richards equation
-to the horton curves. It returns a plot which visualises how the best fitting horton plot looks compared to the original infiltration curves, and it returns a csv with the horton paramter values.
+This script fits the infiltration curves of e.g. the Modified green ampt equation and 
+the Finite volume richards equationto the horton curves. 
+It returns a plot which visualises how the best fitting horton plot looks
+compared to the original infiltration curves, and it returns a csv with the horton paramter values.
 '''
 
 
@@ -61,7 +63,7 @@ for idx, col in enumerate(soil_cols):
 
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"Green-Ampt → Horton Fit soil {col}", fontsize=13, fontweight='bold')
+    fig.suptitle(f"Finite volume Richards → Horton Fit soil {col}", fontsize=13, fontweight='bold')
 
     for ax, mask, title in zip(
         axes,
@@ -69,7 +71,7 @@ for idx, col in enumerate(soil_cols):
         ["Full curve (2 days)", "First 4 hours — high-weight zone"]
     ):
         ax.plot(t_hours[mask], y[mask],
-                label='Modified Green-Ampt', color='steelblue', lw=1.5, alpha=0.8)
+                label='Finite volume Richards', color='steelblue', lw=1.5, alpha=0.8)
         ax.plot(t_hours[mask], f_horton[mask],
                 label='Horton fit', color='orangered', lw=2, linestyle='--')
         if title.startswith("Full"):

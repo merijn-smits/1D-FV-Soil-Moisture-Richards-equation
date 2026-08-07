@@ -10,7 +10,6 @@ Functions to run the 1D finite water content richards by Ogden et al. 2015 and T
     Water Resour. Res., 44, W08453, doi:10.1029/2008WR006815.
 
 '''
-from logging import exception
 import numpy as np
 
 import logging
@@ -263,7 +262,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     else:
         theta_d = bins['theta_bins'][np.max(sat_idx)+1]  #FIXLATER + 1 is to regulate initialisation where there are only completely full and empty bins
         active_idx = np.max(sat_idx)+1
-    max_bin_theta  = np.max(active_idx)
+    #max_bin_theta  = np.max(active_idx)
     #theta_d = bins['theta_bins'][np.sum(z_fronts != 0 )-1]
     #calculate the Method of Lines finite difference form of the partial derivative (Ogden, eq. 17)
     #this is the same for all bins
@@ -372,7 +371,7 @@ def handle_infiltration (rainfall_rate, bins, z_fronts,
     z_new = np.minimum(z_new, max_depth)
     try:
         first_bin = np.min(np.where(z_new< max_depth))
-    except:
+    except ValueError:
         first_bin = 0
     front_speed = z_new[first_bin] - z_fronts[first_bin]
     #logger.info(f'Max bin act = {max_bin}, max bin calc= {max_bin_theta}, Hp = {round(Hp,2)}, Geff = {round(Geff,2)}, θi = {theta_i}, θd = {theta_d}, MoL = {round(MoL,2)}')

@@ -21,7 +21,7 @@
 - ~~perform mass balance checks~~ -> mb error<1E-3%
 - ~~check infiltration per timestep~~ -> checked and graphs created, not fixable short term
 - ~~check if ponded infiltration performs well and also that only ponded (no rain) works well~~ -> works reasonable, but jumps remain
-- ~ think of way to calculate a 'constant' infiltration for a typical shower ( duration 1 hr + 3 hr after)~~
+- ~~think of way to calculate a 'constant' infiltration for a typical shower ( duration 1 hr + 3 hr after)~~
     - ~~Infiltration after ponding has has infiltrated is not necessary~~
 - ~~use actual rainfall and initialize the possibility for non-ponded infiltration~~
 - ~~Evaluate infiltration of fully saturated bins and not fully saturated bins~~ -> still a weird jump present when switchting from fronts to saturated infiltration
@@ -31,6 +31,8 @@
 - ~~compare with (modified) Green-Ampt ~~
 - ~~add layered soils~~
 - **evaluate sat_inf, only the highest saturated bin? multiply by Δθ? Sum the infiltation in sat_bins?**
+- improve the layer transitions. With a layered soil of the same two soil layers, there is still a jump, transition should be smooth.
+    - this could be θi and θd which is dependent on only this layer, while it should perhaps be from the whole infiltration front? 
 
 
 
@@ -41,7 +43,8 @@
 - clean up 'bins' input
 - evaluate the oscillation in infiltration for rainfall infiltration
 - add falling slugs
-- add layered soils
+- ~~add layered soils~~
 - add groundwater module
 - improve speed by changing for loops to arrays/masks
+
 

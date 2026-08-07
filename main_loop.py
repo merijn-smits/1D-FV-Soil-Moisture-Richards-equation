@@ -1,4 +1,3 @@
-from funcs import theta_h
 from datetime import datetime
 import funcs
 import plotting 
@@ -23,24 +22,25 @@ logging.basicConfig (filename = 'messages.log',
                         format = '{levelname}:{name}:{message}',
                         style = '{',
                         level = logging.INFO)
-logging.info(f'time = {datetime.now()}')
+t_start = datetime.now()
+logging.info(f't_start = {t_start}')
 
 ##SETTINGS##
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
 h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
 max_depth = 100 #maximum modeling depth in [cm]
 h_init = 1000
-t_steps = 900
 N = 100
-t_max = 480  *1/24/60 #in [minutes]
-dt = t_max/t_steps
+t_max = 60*24  *1/24/60 #from [minutes] to days
+dt = 2  *1/24/60 #from [minutes] to days
+t_steps = round(t_max/dt)
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 
 ##RAINFALL SETTINGS###
-rainfall_rate = 50 * 24/10 #[mm/hr] to [cm/day]
-rain_end = 480 * 1/24/60 #[minutes] to [days]
+rainfall_rate = 20 * 24/10 #[mm/hr] to [cm/day]
+rain_end = 60 * 1/24/60 #[minutes] to [days]
 rain_vec = np.zeros(t_steps)
-rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]] = rainfall_rate
+rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]+1] = rainfall_rate  #+1 for right exclusive index
 cum_rain = t_max * rainfall_rate #FIXLATER change to accomodate rain_vec
 
 ##LOAD STARINGREEKS##
@@ -57,8 +57,12 @@ alpha = np.array(staring['alpha'])
 soil_code = np.array(staring['unit'])
 mean_inf = np.zeros(len(soil_code))
 infiltration_list = []
+Hp_frame = []
 
 for j in range(len(staring)):
+    if j == 0:
+        logging.info(f'time = {datetime.now()}')
+        
     print(f'soil is {j+1}')
     #Create the bins
     bins = funcs.create_bins(N , theta_r[j], theta_e[j], labda[j], alpha[j],n[j] ,Ks[j], h_max, h_min, dt)
@@ -97,24 +101,40 @@ for j in range(len(staring)):
     infiltration_list.append(inf_mm_day)
     #results_df  = pd.DataFrame(z_history).T
 
-#Merge results with Bofek data and write to file
-results = pd.DataFrame({
-    'soil_code' : soil_code,
-    'infiltration_FVR' : mean_inf    
-    })
+# unlayered_inf = np.array(infiltration_list[4])
+
+# #Merge results with Bofek data and write to file
+# results = pd.DataFrame({
+#     'soil_code' : soil_code,
+#     'infiltration_FVR' : mean_inf    
+#     })
+
+# #create plots for the influence of initial soilmoisture
+# # results_field_cap = results
+# # results_field_cap['infiltration_FVR'] = results_field_cap['infiltration_FVR']/24 #convert to mm/hr
+# results_wilting = results
+# results_wilting['infiltration_FVR'] = results_wilting['infiltration_FVR']/24 #convert to mm/hr
+# merged = pd.merge(results_field_cap,results_wilting, on = 'soil_code')
+# merged.columns = ['soil_code','field_capacity', 'wilting_point']
+# fig, ax = plotting.plot_field_vs_wilting(merged)
 
 infiltration = round(pd.DataFrame(infiltration_list).T,1)
 infiltration.rename(columns= lambda x: x+1,inplace = True)
 infiltration.insert(0, 'time_days',time_vec*t_max)
-infiltration.to_csv('./results/FVR_infiltration.csv')
+infiltration.to_csv('./results/FVR_1000_bui8_dt2m_tmax4hr.csv')
+t_end = datetime.now()
+t_diff = t_end -t_start
+logging.info(f't_end = {t_end}, t_diff = {t_start}')
 
 
+'''
+
+### Coupling to BOFEK to create infiltration map
 bofek = pd.read_csv('bofek.csv')[['bodemcode','isoil1']]
 bofek_new = pd.merge(bofek, results, left_on = 'isoil1', right_on = 'soil_code').drop(columns= ['soil_code', 'isoil1'])
 bofek_new.to_csv(f'./results/Inf_{round(rainfall_rate)}mm_h_{h_init}_z_{round(max_depth)}.csv', sep = ',')
 
 
-'''
 #### Evaluation of results ####
 eval_df = pd.DataFrame({
     "max_bin": max_bin_list,
