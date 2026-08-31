@@ -5,6 +5,7 @@ import pandas as pd
 import logging
 import plotting
 
+
 '''
 the the main.loopred function, but adapted to accomodate layered soils from the bofek
 '''
@@ -33,7 +34,7 @@ N = 100
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 
 ##RAINFALL SETTINGS###
-rainfall_rate = 30 * 24/10 #[mm/hr] to [cm/day]
+rainfall_rate = 20 * 24/10 #[mm/hr] to [cm/day]
 rain_end = 240 * 1/24/60 #[minutes] to [days]
 rain_vec = np.zeros(t_steps)
 rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]] = rainfall_rate
@@ -74,9 +75,11 @@ profiles = funcs.build_layers_by_soil(bofek, soils)
 ##INTIALISE RESULTS##
 mean_inf = np.zeros(len(profiles))
 
+#select one soil
+soil_code = "Zd30"
 
 for j, profile in enumerate(profiles):
-    if profile != "Zd21":
+    if profile != soil_code:
         continue
     #Set initial values
     n_layers = len(profiles[profile])
@@ -156,20 +159,20 @@ for j, profile in enumerate(profiles):
     mean_inf[j] = np.mean(inf_mm_day)
     #results_df  = pd.DataFrame(z_history).T
 
-layered_inf = inf_rate
+# layered_inf = inf_rate
 
-df = pd.DataFrame({
-    'time':time_vec/dt*t_max,
-    'layered_inf':layered_inf
-})
-'''
+# df = pd.DataFrame({
+#     'time':time_vec/dt*t_max,
+#     'layered_inf':layered_inf
+# })
+
 #Merge results with Bofek data and write to file
 results = pd.DataFrame({
     'soil_code' : soil_code,
     'infiltration_FVR' : mean_inf    
     })
 
-infiltration = round(pd.DataFrame(infiltration_list[0][:,0]),1)
+infiltration = round(pd.DataFrame(inf_mm_day[:,0]),1)
 infiltration.rename(columns= lambda x: x+1,inplace = True)
 infiltration.insert(0, 'time_days',time_vec*t_max)
 infiltration.to_csv('./results/FVR_layered_100_bui8_dt15_tm4.csv')
@@ -177,7 +180,7 @@ infiltration.to_csv('./results/FVR_layered_100_bui8_dt15_tm4.csv')
 
 bofek = pd.read_csv('bofek.csv')[['bodemcode','isoil1']]
 bofek_new = pd.merge(bofek, results, left_on = 'isoil1', right_on = 'soil_code').drop(columns= ['soil_code', 'isoil1'])
-bofek_new.to_csv(f'./results/Inf_{round(rainfall_rate)}mm_h_{h_init}_z_{round(max_depth)}.csv', sep = ',')
+bofek_new.to_csv(f'./results/Inf_{round(rainfall_rate)}mm_h_{h_init}.csv', sep = ',')
 
 
 #set layer to evaluate
@@ -186,19 +189,20 @@ layer = 0
 #Create eval plots
 fig, axes = plotting.plot_evaluation(
     cum_inf[:,layer], 
-    frontspeed_list[:,layer],     anim.save("animation.mp4", writer="ffmpeg", fps=30, dpi=100)
+    frontspeed_list[:,layer],    
     Hp_array[:,layer], 
     Hp_array[:,layer+1], 
     max_bin_list[:,layer])
 
-plt.show()
-'''
 
+
+'''
 anim = plotting.animate_fronts(
     z_history    = z_history,
     profiles     = profiles,
-    profile_name = 'Zd21',
+    profile_name = 'Zd30',
     Hp_array     = Hp_array,
     interval     = 50        # ms between frames
 )
-anim.save("animation_layered.mp4", writer="ffmpeg", fps=30, dpi=100)
+# anim.save("animation_layered.mp4", writer="ffmpeg", fps=30, dpi=100)
+'''

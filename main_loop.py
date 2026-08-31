@@ -9,7 +9,7 @@ import pandas as pd
 import logging
 
 '''
-the original main function, but lopped over all soils of the staring reeks
+the original main function, but looped over all soils of the staring reeks.
 '''
 
 #set up message logging
@@ -31,14 +31,14 @@ h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
 max_depth = 100 #maximum modeling depth in [cm]
 h_init = 1000
 N = 100
-t_max = 60*24  *1/24/60 #from [minutes] to days
-dt = 2  *1/24/60 #from [minutes] to days
+t_max = 120  *1/24/60 #from [minutes] to days
+dt = 0.25 *1/24/60 #from [minutes] to days
 t_steps = round(t_max/dt)
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 
 ##RAINFALL SETTINGS###
-rainfall_rate = 20 * 24/10 #[mm/hr] to [cm/day]
-rain_end = 60 * 1/24/60 #[minutes] to [days]
+rainfall_rate = 100 * 24/10 #[mm/hr] to [cm/day]
+rain_end = 120 * 1/24/60 #[minutes] to [days]
 rain_vec = np.zeros(t_steps)
 rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]+1] = rainfall_rate  #+1 for right exclusive index
 cum_rain = t_max * rainfall_rate #FIXLATER change to accomodate rain_vec
@@ -96,18 +96,14 @@ for j in range(len(staring)):
         z_history[i,:] = z_fronts
         logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
 
-    #calculate the total infiltration [cm]
+    #calculate the total infiltration
     mean_inf[j] = np.mean(inf_mm_day)
     infiltration_list.append(inf_mm_day)
     #results_df  = pd.DataFrame(z_history).T
 
-# unlayered_inf = np.array(infiltration_list[4])
 
-# #Merge results with Bofek data and write to file
-# results = pd.DataFrame({
-#     'soil_code' : soil_code,
-#     'infiltration_FVR' : mean_inf    
-#     })
+### POSTPROCESSING ###
+#unlayered_inf = np.array(infiltration_list[4])
 
 # #create plots for the influence of initial soilmoisture
 # # results_field_cap = results
@@ -121,20 +117,25 @@ for j in range(len(staring)):
 infiltration = round(pd.DataFrame(infiltration_list).T,1)
 infiltration.rename(columns= lambda x: x+1,inplace = True)
 infiltration.insert(0, 'time_days',time_vec*t_max)
-infiltration.to_csv('./results/FVR_1000_bui8_dt2m_tmax4hr.csv')
+infiltration.to_csv(f'./results/FVR_1000_{rainfall_rate}cmd_dt{dt*60*24}m_tmax4hr.csv', index=False)
 t_end = datetime.now()
 t_diff = t_end -t_start
 logging.info(f't_end = {t_end}, t_diff = {t_start}')
 
 
-'''
+
 
 ### Coupling to BOFEK to create infiltration map
+results = pd.DataFrame({
+    'soil_code' : soil_code,
+    'infiltration_FVR' : mean_inf    
+    })
+results.to_csv(f'./results/{round(t_max*24)}hr_mean_inf_mmday.csv', index=False)
 bofek = pd.read_csv('bofek.csv')[['bodemcode','isoil1']]
 bofek_new = pd.merge(bofek, results, left_on = 'isoil1', right_on = 'soil_code').drop(columns= ['soil_code', 'isoil1'])
 bofek_new.to_csv(f'./results/Inf_{round(rainfall_rate)}mm_h_{h_init}_z_{round(max_depth)}.csv', sep = ',')
 
-
+'''
 #### Evaluation of results ####
 eval_df = pd.DataFrame({
     "max_bin": max_bin_list,

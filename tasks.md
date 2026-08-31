@@ -30,14 +30,19 @@
 
 - ~~compare with (modified) Green-Ampt ~~
 - ~~add layered soils~~
-- **evaluate sat_inf, only the highest saturated bin? multiply by Δθ? Sum the infiltation in sat_bins?**
-- improve the layer transitions. With a layered soil of the same two soil layers, there is still a jump, transition should be smooth.
-    - this could be θi and θd which is dependent on only this layer, while it should perhaps be from the whole infiltration front? 
+- evaluate sat_inf, only the highest saturated bin? multiply by Δθ? Sum the infiltation in sat_bins?
+- for layered soils
+    - improve the layer transitions. With a layered soil of the same two soil layers, there is still a jump, transition should be smooth.
+        - this could be θi and θd which is dependent on only this layer, while it should perhaps be from the whole infiltration front?
+        - --> somehow move sat_idx and active_idx to global
+    - waterbalance gets violated if sub layers have a much lower k than toplayers. then Hp_array[0] negative and infiltration somehow increases, while it should decrease. Something gets mixed up in the handle_infitration
+    - probably best solution is to mak the connection head-driven, but this needs a root finder to find the head at the boundary
 
 
 
 ## Long-term ##
 - ~~make theta_init dependent on the soil~~
+- cleam up units --> make everthing mm and hours?
 - compare with observations
 - the dips in inifiltration for ponded only
 - clean up 'bins' input

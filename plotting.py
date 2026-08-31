@@ -4,14 +4,14 @@ import matplotlib.patches as mpatches
 from matplotlib.animation import FuncAnimation
 
 
-
-'''compare = pd.DataFrame({'layered':layered_inf, 'unlayered':unlayered_inf})
+'''
+compare = pd.DataFrame({'layered':layered_inf, 'unlayered':unlayered_inf})
 compare['time_hr'] = time_vec* t_max*24
 compare['layered'] = compare['layered']/24
 compare['unlayered'] = compare['unlayered']/24
 
 #creatre plot
-soil = 'Zd21'
+soil = 'Zd30'
 fig, ax = plt.subplots(figsize=(8, 5))
 ax.plot(compare['time_hr'], compare['unlayered'], label='uniforme bodem', color='C0', linewidth=2)
 ax.plot(compare['time_hr'], compare['layered'],   label='gelaagde bodem',   color='C1', linewidth=2)
@@ -19,9 +19,8 @@ ax.set_title(f'Effect van een gelaagde bodem voor bodem {soil}')
 ax.set_xlabel('Tijd (uur)')
 ax.set_ylabel('Infiltratie (mm/uur)')
 ax.legend()
+
 '''
-
-
 
 def plot_field_vs_wilting(
     merged,

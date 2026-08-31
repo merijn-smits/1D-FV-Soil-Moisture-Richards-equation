@@ -82,18 +82,7 @@ max_bin_list = np.zeros(t_steps)
 frontspeed_list =np.zeros(t_steps)
 Hp_list = np.zeros(t_steps)
 
-'''
-# one by one manual loop
-z_fronts, Hp, infiltration = funcs.handle_infiltration (rainfall_rate, bins, z_fronts, 
-                                        alpha, m, n, theta_r, theta_e,
-                                        dt, Hp, max_depth, theta_init, N)
 
-# deactive_fronts = np.where((z_old == z_fronts)  & (z_old != max_depth))[0]
-# slugs = funcs.init_detach_slugs(z_fronts)
-# slugs = advance_slugs()
-z_fronts = funcs.capillary_relax(z_fronts, max_depth)
-#z_old = z_fronts
-'''
 #automatic loop
 for i ,t  in enumerate(time_vec):
     logging.info(f't = {i}, rain = {rain_vec[i]}')

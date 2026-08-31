@@ -227,7 +227,7 @@ Calculate the infiltration depth using the Equation form Ogden and solve it nume
 def RK4 (z, Geff, MoL, head, dt, active = None):
     '''
     Use 4-th order Runge-Kutta to advance the ODE one timestep for 1 bin
-    ODE: dz_j/dt = ΅((K(θd)-K(θi)) / (θd-θi) * (1 + (h_j + Hp)/z_j)
+    ODE: dz_j/dt = ((K(θd)-K(θi)) / (θd-θi) * (1 + (h_j + Hp)/z_j)
     '''
 
     # calculate for each front infiltration velocity Ogden eq 18   

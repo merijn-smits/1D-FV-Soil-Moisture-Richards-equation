@@ -1,3 +1,4 @@
+from numpy import sqrt
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,16 +12,16 @@ compared to the original infiltration curves, and it returns a csv with the hort
 '''
 
 
-df = pd.read_csv('./results/FVR_infiltration.csv')
+df = pd.read_csv('./results/FVR_1000_240.0cmd_dt0.25m_tmax4hr.csv') #in mm/day
 ###HORTON PARAMETER FITTING###
 
 def horton(t, f0, fc, k):
-    return fc + (f0 - fc) * np.exp(-t / k)
+    return fc + (f0 - fc) * np.exp(-t * k)
 
 #define weights, focus on the first four hours
-WEIGHT_EARLY = 10.0
-WEIGHT_LATE  = 1.0
-four_hours   = 4 / 24        # in days
+WEIGHT_EARLY = 1
+WEIGHT_LATE  = 1
+four_hours   = 2 / 24        # in days
 
 bounds = ([0, 0, 0], [np.inf, np.inf, np.inf])  # all params must be positive
 soil_cols = [c for c in df.columns if c != 'time_days']
@@ -38,7 +39,7 @@ weights = np.where(df['time_days'] <= four_hours, WEIGHT_EARLY, WEIGHT_LATE)
 
 for idx, col in enumerate(soil_cols):
     #only select the part of the infiltration curve where infiltration is less than the precipitation
-    y = np.array(df[col][df[col]<1200])    # FIXLATER: 1200 is the rainfall rate for this simulation, make variable
+    y = np.array(df[col][df[col]<2400])    # FIXLATER: 2400 is the rainfall rate for this simulation, make variable
     t = np.array(df['time_days'][:len(y)])
     weights = np.where(df['time_days'] <= four_hours, WEIGHT_EARLY, WEIGHT_LATE)[-len(y):]
     p0 = [y[0], y[-1], four_hours]
@@ -60,37 +61,29 @@ for idx, col in enumerate(soil_cols):
     f_horton = horton(t, *popt)
     t_hours  = t * 24
     mask_4h  = weights>1 # FIXLATER; chnage to allow weights also to be high at the tail
+    RMSE = np.sqrt(sum((f_horton-y)**2)/len(y))
+    # plot the Horton fits and save to png
+    fig, ax = plt.subplots(1, 1, figsize=(10, 5))
+    fig.suptitle(f"Finite volume Richards → Horton Fit horizont {col}", fontsize=13, fontweight='bold')
 
-
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-    fig.suptitle(f"Finite volume Richards → Horton Fit soil {col}", fontsize=13, fontweight='bold')
-
-    for ax, mask, title in zip(
-        axes,
-        [pd.Series([True] * len(y)), mask_4h],
-        ["Full curve (2 days)", "First 4 hours — high-weight zone"]
-    ):
-        ax.plot(t_hours[mask], y[mask],
-                label='Finite volume Richards', color='steelblue', lw=1.5, alpha=0.8)
-        ax.plot(t_hours[mask], f_horton[mask],
-                label='Horton fit', color='orangered', lw=2, linestyle='--')
-        if title.startswith("Full"):
-            ax.axvline(4, color='gray', linestyle=':', lw=1.2, label='4h weight boundary')
-        ax.set_xlabel('Time (hours)')
-        ax.set_ylabel('Infiltration rate')
-        ax.set_title(title)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+    ax.plot(t_hours, y, label='Finite volume Richards', color='steelblue', lw=1.5, alpha=0.8)
+    ax.plot(t_hours, f_horton, label='Horton fit', color='orangered', lw=2, linestyle='--')
+    ax.set_xlabel('Tijd (uur)')
+    ax.set_ylabel('Infiltratiesnelheid (mm/dag)')
+    ax.set_title(f'f0 = {round(f0[idx])} mm/dag, fc = {round(fc[idx])} mm/dag, k = {round(k[idx],3)} 1/dag, RMSE = {round(RMSE,1)}')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig(f'./Graphs/horton/horton_fit_weighted_soil_{col}.png', dpi=150, bbox_inches='tight')
     plt.close()
     #plt.show()
 
+#Divisions are to compare to Rioned, without everything is in mm/day orf day
 results = pd.DataFrame({
     'soil' : soil_cols,
-    'f_init' : f0,
-    'f_equ' : fc,
-    'k' : k
+    'f_init' : f0/24, #mm/hr
+    'f_equ' : fc/24, #mm/hr
+    'k' : k/24/60 #1/min
 })
-results.to_csv('./results/horton_params_FVR.csv')
+#results.to_csv('./results/horton_params_FVR_Rioned.csv')
