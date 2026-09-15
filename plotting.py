@@ -22,30 +22,6 @@ ax.legend()
 
 '''
 
-# def plot_field_vs_wilting(
-#     merged,
-#     soil_col='soil_code',
-#     field_col='field_capacity',
-#     wilt_col='wilting_point',
-#     figsize=(12, 6)
-# ):
-#     x = merged[soil_col].astype(str)
-#     width = 0.35
-#     idx = np.arange(len(x))
-
-#     fig, ax = plt.subplots(figsize=figsize)
-#     ax.set_title('Infiltratie voor bodems op veldcapaciteit en verwelkingspunt')
-#     ax.bar(idx - width / 2, merged[field_col], width, label='Veldcapaciteit')
-#     ax.bar(idx + width / 2, merged[wilt_col], width, label='Verwelkingspunt')
-
-#     ax.set_xticks(idx)
-#     ax.set_xticklabels(x, rotation=90)
-#     ax.set_xlabel('Staringreeks')
-#     ax.set_ylabel('Infiltratie (mm/uur)')
-#     ax.legend()
-#     fig.tight_layout()
-#     return fig, ax
-
 def plot_field_vs_wilting(
     merged,
     soil_col='soil_code',
@@ -53,21 +29,6 @@ def plot_field_vs_wilting(
     wilt_col='wilting_point',
     figsize=(12, 6)
 ):
-    # map integer soil code to texture label (1-based codes)
-    def _texture(code):
-        c = int(code)
-        if 1 <= c <= 6:   return 'Zand'
-        if 7 <= c <= 9:   return 'Zavel'
-        if 10 <= c <= 12: return 'Klei'
-        if 13 <= c <= 14: return 'Leem'
-        if 15 <= c <= 18: return 'Moerig'
-        if 19 <= c <= 25: return 'Zand'
-        if 26 <= c <= 28: return 'Zavel'
-        if 29 <= c <= 31: return 'Klei'
-        if 32 <= c <= 33: return 'Leem'
-        if 34 <= c <= 36: return 'Veen'
-        return ''
-
     x = merged[soil_col].astype(str)
     width = 0.35
     idx = np.arange(len(x))
@@ -82,44 +43,9 @@ def plot_field_vs_wilting(
     ax.set_xlabel('Staringreeks')
     ax.set_ylabel('Infiltratie (mm/uur)')
     ax.legend()
-
-    # --- create contiguous texture segments from soil_code values ---
-    textures = [_texture(c) for c in merged[soil_col].astype(int).tolist()]
-    segments = []
-    if textures:
-        start = 0
-        cur = textures[0]
-        for i, t in enumerate(textures[1:], start=1):
-            if t != cur:
-                segments.append((start, i - 1, cur))
-                start = i
-                cur = t
-        segments.append((start, len(textures) - 1, cur))
-
-    # ensure space at bottom for the band
-    band_height_fig = 0.03  # fraction of figure height (thin)
-    gap = 0.01
-    pos = ax.get_position()
-    bottom_new = pos.y0
-    if bottom_new < (band_height_fig + gap):
-        fig.subplots_adjust(bottom=band_height_fig + gap + 0.02)
-        pos = ax.get_position()
-
-    # add a tiny axis below the main axis to draw the band
-    band_ax = fig.add_axes([pos.x0, pos.y0 - band_height_fig - gap, pos.width, band_height_fig])
-    band_ax.set_xlim(-0.5, len(x) - 0.5)
-    band_ax.set_ylim(0, 1)
-    band_ax.axis('off')
-
-    # draw black filled rectangles and center labels (white text for contrast)
-    for (i0, i1, label) in segments:
-        w = (i1 - i0 + 1)
-        rect = mpatches.Rectangle((i0 - 0.5, 0), w, 1.0, facecolor='black', edgecolor='black')
-        band_ax.add_patch(rect)
-        band_ax.text(i0 - 0.5 + w / 2, 0.5, label, va='center', ha='center', fontsize=6, color='white')
-
     fig.tight_layout()
     return fig, ax
+
 
 def _make_twin_axis(ax, position=None, side="right"):
     twin = ax.twinx()
