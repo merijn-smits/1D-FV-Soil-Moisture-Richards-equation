@@ -29,16 +29,16 @@ logging.info(f't_start = {t_start}')
 h_max = 17000  # maximum matric suction [cm] (16000 is wilting point)
 h_min = 0.001   # minimum matricsuction [cm] to prevent numerical issues
 max_depth = 100 #maximum modeling depth in [cm]
-h_init = 1000
+h_init = 10**1.8
 N = 100
-t_max = 120  *1/24/60 #from [minutes] to days
+t_max = 60  *1/24/60 #from [minutes] to days
 dt = 0.25 *1/24/60 #from [minutes] to days
 t_steps = round(t_max/dt)
 time_vec = np.array([(i/t_steps) for i in range(1,t_steps+1)])
 
 ##RAINFALL SETTINGS###
-rainfall_rate = 100 * 24/10 #[mm/hr] to [cm/day]
-rain_end = 120 * 1/24/60 #[minutes] to [days]
+rainfall_rate = 20 * 24/10 #[mm/hr] to [cm/day]
+rain_end = 60 * 1/24/60 #[minutes] to [days]
 rain_vec = np.zeros(t_steps)
 rain_vec[:np.where(time_vec == (rain_end/t_max))[0][0]+1] = rainfall_rate  #+1 for right exclusive index
 cum_rain = t_max * rainfall_rate #FIXLATER change to accomodate rain_vec
@@ -97,22 +97,27 @@ for j in range(len(staring)):
         logging.info(f'Inf_mm_day = {inf_mm_day[i]}')
 
     #calculate the total infiltration
-    mean_inf[j] = np.mean(inf_mm_day)
-    infiltration_list.append(inf_mm_day)
-    #results_df  = pd.DataFrame(z_history).T
+    mean_inf[j] = np.mean(inf_mm_day) #calculates the mean infiltration rate of the entire simulation
+    infiltration_list.append(inf_mm_day) #calculates infiltration at  each timestep im mm/day
+    results_df  = pd.DataFrame(z_history).T #calculates the front positions of the last soil and transforms these as df
 
 
 ### POSTPROCESSING ###
 #unlayered_inf = np.array(infiltration_list[4])
 
-# #create plots for the influence of initial soilmoisture
-# # results_field_cap = results
-# # results_field_cap['infiltration_FVR'] = results_field_cap['infiltration_FVR']/24 #convert to mm/hr
-# results_wilting = results
-# results_wilting['infiltration_FVR'] = results_wilting['infiltration_FVR']/24 #convert to mm/hr
-# merged = pd.merge(results_field_cap,results_wilting, on = 'soil_code')
-# merged.columns = ['soil_code','field_capacity', 'wilting_point']
-# fig, ax = plotting.plot_field_vs_wilting(merged)
+#create plots for the influence of initial soilmoisture (manually recalc the above with different h_init)
+#Merge results with Bofek data and write to file
+results = pd.DataFrame({
+    'soil_code' : soil_code,
+    'infiltration_FVR' : mean_inf    
+    })
+results_field_cap = results
+results_field_cap['infiltration_FVR'] = results_field_cap['infiltration_FVR']/24 #convert to mm/hr
+results_wilting = results
+results_wilting['infiltration_FVR'] = results_wilting['infiltration_FVR']/24 #convert to mm/hr
+merged = pd.merge(results_field_cap,results_wilting, on = 'soil_code')
+merged.columns = ['soil_code','field_capacity', 'wilting_point']
+fig, ax = plotting.plot_field_vs_wilting(merged)
 
 infiltration = round(pd.DataFrame(infiltration_list).T,1)
 infiltration.rename(columns= lambda x: x+1,inplace = True)
